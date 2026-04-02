@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinanceApp - Gestão Financeira Pessoal
 
-## Getting Started
+O **FinanceApp** é uma aplicação completa de gestão financeira pessoal (PFM) construída para ajudar você a ter o controle total de suas finanças, categorizar despesas e monitorar o fechamento de faturas de cartão de crédito.
 
-First, run the development server:
+## 🚀 Tecnologias Integradas
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Front-end**: Funciona com **Next.js 15** usando o App Router, permitindo navegação rápida e server components integrados.
+- **Estilização**: Interface gráfica rica e agradável usando **Tailwind CSS** em conjunto com **shadcn/ui** e ícones do **Lucide React**.
+- **Autenticação e Banco de Dados**: Usa o **Supabase** (PostgreSQL) para gerenciar dados via Row Level Security (RLS) e a autenticação de usuários.
+- **Formulários e Validação**: Usa `react-hook-form` e `zod`.
+- **Efeitos Dinâmicos e Notificações**: `sonner` para mensagens toast de sucesso/erro.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ✨ Funcionalidades
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Dashboard Integrado**: Totalizador de Despesas, Receitas e Saldo Consolidado de contas correntes/poupança/carteiras.
+- **Gestão de Contas e Cartões**: Cadastre as origens de seu dinheiro. A plataforma entende o fechamento e vencimento de cartões e unifica faturas automaticamente.
+- **Transações Detalhadas**: Categorização profunda, transações parceladas criadas automaticamente e suporte a compras recorrentes.
+- **Extratos e Relatórios**: Relatórios gráficos e filtráveis por data ou categoria. 
+- **Importação Simplificada**: Ferramenta de importação em CSV com modelo padronizado.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🛠️ Configuração e Execução
 
-## Learn More
+### Pré-requisitos
+- **Node.js**: Versão 18.x ou superior.
+- **Conta Supabase**: Para hospedar o backend.
 
-To learn more about Next.js, take a look at the following resources:
+### Passos
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Clone do Repositório**:
+   ```bash
+   git clone https://github.com/seu-usuario/app-financeiro-v2.git
+   cd app-financeiro-v2
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. **Instalação das dependências**:
+   ```bash
+   npm install
+   # ou yarn install / pnpm install
+   ```
 
-## Deploy on Vercel
+3. **Configuração de Variáveis de Ambiente**:
+   Crie um arquivo `.env` ou `.env.local` na raiz do projeto contendo as credenciais do seu Supabase (`NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+4. **Configuração do Banco**:
+   O arquivo `supabase-schema.sql` na raiz possui todas as triggers, views de relatórios, constraints, regras de RLS (segurança para múltiplos perfis se isolarem) e funções RPC necessárias. Execute estas queries na aba SQL do painel web do seu projeto Supabase.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+5. **Servidor Local**:
+   ```bash
+   npm run dev
+   ```
+
+   Abra [http://localhost:3000](http://localhost:3000) no seu navegador para ver a aplicação ativa e acessar a tela de Login/Cadastro.
+
+## 🤝 Contribuindo
+
+Pull requests são sempre bem-vindos! Sinta-se livre para debater ideias de melhorias abrindo _issues_.
+
+## 📄 Licença
+
+Este projeto é desenvolvido para uso individual e protegido, adequando-se à licença MIT (ou conforme aplicável).

@@ -1,0 +1,11 @@
+Data,Descrição,Valor,Tipo,Método,Categoria,Conta,Conta Destino
+2024-04-01,Salário Mensal,5500.00,income,,Salário,NuConta,
+2024-04-02,Aluguel Apartamento,1200.00,expense,,Moradia,Inter,
+2024-04-03,Transferência Pix para Reserva,50.00,transfer,pix,,NuConta,Inter
+2024-04-04,Saque para Carteira,100.00,transfer,cash,,NuConta,Carteira
+2024-04-05,Supermercado Mensal,350.50,expense,,Alimentação,Inter,
+2024-04-06,TED entre contas,200.00,transfer,ted,,Inter,NuConta
+2024-04-07,Freelance Design,800.00,income,,Freelance,NuConta,
+2024-04-08,DOC para Poupança,150.00,transfer,doc,,NuConta,Inter
+2024-04-09,Jantar no Restaurante,80.00,expense,,Lazer,Inter,
+2024-04-10,Venda de Item Usado,120.00,income,pix,Outros,NuConta,
