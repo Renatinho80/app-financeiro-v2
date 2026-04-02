@@ -4,12 +4,17 @@ import { Progress as ProgressPrimitive } from "@base-ui/react/progress"
 
 import { cn } from "@/lib/utils"
 
+interface ProgressProps extends ProgressPrimitive.Root.Props {
+  indicatorColor?: string;
+}
+
 function Progress({
   className,
   children,
   value,
+  indicatorColor,
   ...props
-}: ProgressPrimitive.Root.Props) {
+}: ProgressProps) {
   return (
     <ProgressPrimitive.Root
       value={value}
@@ -19,7 +24,7 @@ function Progress({
     >
       {children}
       <ProgressTrack>
-        <ProgressIndicator />
+        <ProgressIndicator style={indicatorColor ? { backgroundColor: indicatorColor } : undefined} />
       </ProgressTrack>
     </ProgressPrimitive.Root>
   )

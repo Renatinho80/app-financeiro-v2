@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate, formatShortMonth, formatMonthYear } from "@/lib/utils/format";
 import { CHART_COLORS } from "@/lib/utils/constants";
-import { TrendingUp, TrendingDown, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, CreditCard, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, CreditCard, AlertTriangle, Sparkles } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Area, AreaChart } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, parseISO } from "date-fns";
 import Link from "next/link";
@@ -66,9 +66,8 @@ export default function DashboardPage() {
         .gte("date", start).lte("date", end);
 
       const catMap = new Map<string, { name: string; value: number; color: string }>();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (catExp || []).forEach((t: any) => {
-        const cat = Array.isArray(t.category) ? t.category[0] : t.category;
+      (catExp || []).forEach((t) => {
+        const cat = Array.isArray(t.category) ? t.category[0] : (t.category as { name: string; color: string | null } | null);
         const name = cat?.name || "Sem categoria";
         const color = cat?.color || "#64748b";
         const existing = catMap.get(name);
@@ -130,8 +129,8 @@ export default function DashboardPage() {
         .gte("due_date", today)
         .lte("due_date", fifteenDays)
         .order("due_date", { ascending: true });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawInvoices = (invoicesData as any[]) || [];
+      
+      const rawInvoices = (invoicesData as (UpcomingInvoice & { credit_card: UpcomingInvoice["credit_card"] | UpcomingInvoice["credit_card"][] })[]) || [];
       setUpcomingInvoices(rawInvoices.map(inv => ({
         ...inv,
         credit_card: Array.isArray(inv.credit_card) ? inv.credit_card[0] : inv.credit_card,
@@ -141,7 +140,50 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth]);  
+
+  // Generate Insight
+  const getInsight = () => {
+    if (monthlyData.length < 2) return null;
+    const current = monthlyData[monthlyData.length - 1]; // This month
+    const previous = monthlyData[monthlyData.length - 2]; // Last month
+    
+    if (current && previous && current.expenses > 0 && previous.expenses > 0) {
+      const diff = ((current.expenses - previous.expenses) / previous.expenses) * 100;
+      const isSaving = diff < 0;
+      
+      if (isSaving) {
+        return {
+          title: "Ótimo Desempenho",
+          desc: `Você gastou ${Math.abs(diff).toFixed(1)}% a menos que no mês passado. Mantenha o ritmo!`,
+          color: "emerald"
+        };
+      } else if (diff > 10) {
+        return {
+          title: "Atenção aos Gastos",
+          desc: `Suas despesas subiram ${diff.toFixed(1)}% em relação ao mês repassado.`,
+          color: "amber"
+        };
+      }
+    }
+    
+    // Fallback if no specific comparison
+    if (summary.monthBalance > 0) {
+      return {
+        title: "Balanço Positivo",
+        desc: `Você já salvou ${formatCurrency(summary.monthBalance)} neste mês! Que tal criar uma nova Meta?`,
+        color: "emerald"
+      };
+    }
+    
+    return {
+      title: "Resumo do Mês",
+      desc: "Continue controlando suas despesas diárias para atingir suas metas.",
+      color: "blue"
+    };
+  };
+
+  const currentInsight = getInsight();
 
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
     const d = subMonths(new Date(), i);
@@ -180,6 +222,26 @@ export default function DashboardPage() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Insights */}
+      {currentInsight && (
+        <Card className={`border-${currentInsight.color}-500/30 bg-gradient-to-r from-${currentInsight.color}-500/10 to-transparent relative overflow-hidden`}>
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl" />
+          <CardContent className="p-4 sm:p-6 flex items-start sm:items-center gap-4">
+            <div className={`p-3 rounded-xl bg-${currentInsight.color}-500/20 text-${currentInsight.color}-600 shrink-0`}>
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-semibold flex items-center gap-2">
+                Inteligência App <Badge variant="secondary" className="scale-75 origin-left bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/20">Novo</Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                <strong>{currentInsight.title}:</strong> {currentInsight.desc}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { User, Lock, Palette, Trash2, Save } from "lucide-react";
+import { User, Lock, Palette, Trash2, Save, RefreshCw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function ConfiguracoesPage() {
   const router = useRouter();
@@ -25,6 +26,10 @@ export default function ConfiguracoesPage() {
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteText, setDeleteText] = useState("");
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetText, setResetText] = useState("");
+  const [resetConsent, setResetConsent] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -90,6 +95,28 @@ export default function ConfiguracoesPage() {
     await supabase.auth.signOut();
     toast.success("Conta excluída. Você será redirecionado.");
     router.push("/login");
+  };
+
+  const handleResetAccount = async () => {
+    if (resetText !== "RESETAR" || !resetConsent) return;
+    setIsResetting(true);
+    const supabase = createClient();
+    const { error } = await supabase.rpc("reset_user_account");
+    
+    if (error) {
+      toast.error("Erro ao resetar conta", { description: error.message });
+      setIsResetting(false);
+      return;
+    }
+
+    toast.success("Sua conta foi zerada com sucesso.");
+    setResetConfirm(false);
+    setResetText("");
+    setResetConsent(false);
+    
+    setTimeout(() => {
+      window.location.href = "/dashboard";
+    }, 1500);
   };
 
   const initials = name
@@ -189,9 +216,20 @@ export default function ConfiguracoesPage() {
             <Trash2 className="w-5 h-5" /> Zona de Perigo
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Ao excluir sua conta, todos os seus dados serão permanentemente removidos. Esta ação não pode ser desfeita.</p>
-          <Button variant="destructive" onClick={() => setDeleteConfirm(true)}>Excluir Minha Conta</Button>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <h3 className="font-medium flex items-center gap-2"><RefreshCw className="w-4 h-4" /> Resetar Dados da Conta</h3>
+            <p className="text-sm text-muted-foreground">Esta ação apagará todas as suas transações, contas bancárias, cartões, faturas e recriará as categorias e configurações padrão. Sua conta de usuário (email/senha) <strong>não</strong> será apagada.</p>
+            <Button variant="outline" className="text-destructive hover:bg-destructive/10" onClick={() => setResetConfirm(true)}>Resetar Todos os Dados</Button>
+          </div>
+          
+          <Separator />
+          
+          <div className="space-y-4">
+            <h3 className="font-medium flex items-center gap-2"><Trash2 className="w-4 h-4" /> Excluir Conta Definitivamente</h3>
+            <p className="text-sm text-muted-foreground">Ao excluir sua conta, todos os seus dados e seu login serão permanentemente removidos. Esta ação não pode ser desfeita.</p>
+            <Button variant="destructive" onClick={() => setDeleteConfirm(true)}>Excluir Minha Conta</Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -208,6 +246,42 @@ export default function ConfiguracoesPage() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteAccount} disabled={deleteText !== "EXCLUIR"} className="bg-destructive text-white hover:bg-destructive/90">
               Excluir Conta Permanentemente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resetConfirm} onOpenChange={setResetConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Resetar toda a sua conta?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-4 text-left">
+              <p>Isso apagará irreversivelmente todas as suas <strong>transações, cartões, faturas e contas</strong>. As categorias e configurações serão restauradas aos padrões.</p>
+              
+              <div className="flex items-center space-x-2 pt-2 border-y border-border py-4 my-4">
+                <Checkbox id="consent" checked={resetConsent} onCheckedChange={(c) => setResetConsent(c as boolean)} />
+                <Label htmlFor="consent" className="text-sm cursor-pointer font-medium">
+                  Estou ciente que perderei todos meus dados atuais.
+                </Label>
+              </div>
+
+              <p>Para confirmar, digite <strong>RESETAR</strong> abaixo:</p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input 
+            value={resetText} 
+            onChange={e => setResetText(e.target.value)} 
+            placeholder="Digite RESETAR" 
+            disabled={!resetConsent} 
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isResetting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleResetAccount} 
+              disabled={resetText !== "RESETAR" || !resetConsent || isResetting} 
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {isResetting ? "Limpando dados..." : "Resetar Minha Conta"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

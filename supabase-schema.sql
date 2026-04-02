@@ -26,7 +26,7 @@ BEGIN
   VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)), NEW.email);
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -234,12 +234,76 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_profile_created_seed_categories ON profiles;
 CREATE TRIGGER on_profile_created_seed_categories
   AFTER INSERT ON profiles
   FOR EACH ROW EXECUTE FUNCTION public.seed_default_categories();
+
+-- ============================================================
+-- RPC: Resetar conta de usuário (Limpa todos os dados)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.reset_user_account()
+RETURNS void AS $$
+DECLARE
+  _user_id UUID := auth.uid();
+  _parent_id UUID;
+BEGIN
+  IF _user_id IS NULL THEN
+    RAISE EXCEPTION 'Não autenticado';
+  END IF;
+
+  DELETE FROM transactions WHERE user_id = _user_id;
+  DELETE FROM accounts WHERE user_id = _user_id;
+  DELETE FROM credit_cards WHERE user_id = _user_id;
+  DELETE FROM budgets WHERE user_id = _user_id;
+  DELETE FROM tags WHERE user_id = _user_id;
+  DELETE FROM goals WHERE user_id = _user_id;
+  DELETE FROM categories WHERE user_id = _user_id;
+
+  -- Re-seed padrão
+  -- Despesas
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Alimentação', 'expense', '🍔', '#f97316');
+  
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Moradia', 'expense', '🏠', '#8b5cf6') RETURNING id INTO _parent_id;
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Aluguel', 'expense', '🔑', '#8b5cf6', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Condomínio', 'expense', '🏢', '#8b5cf6', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'IPTU', 'expense', '📄', '#8b5cf6', _parent_id);
+
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Transporte', 'expense', '🚗', '#3b82f6') RETURNING id INTO _parent_id;
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Combustível', 'expense', '⛽', '#3b82f6', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Transporte público', 'expense', '🚌', '#3b82f6', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Uber', 'expense', '🚕', '#3b82f6', _parent_id);
+
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Saúde', 'expense', '🏥', '#ef4444') RETURNING id INTO _parent_id;
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Médico', 'expense', '👨‍⚕️', '#ef4444', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Farmácia', 'expense', '💊', '#ef4444', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Plano de saúde', 'expense', '🏥', '#ef4444', _parent_id);
+
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Educação', 'expense', '📚', '#06b6d4');
+
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Lazer', 'expense', '🎮', '#ec4899') RETURNING id INTO _parent_id;
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Streaming', 'expense', '📺', '#ec4899', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Restaurante', 'expense', '🍽️', '#ec4899', _parent_id);
+  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Viagem', 'expense', '✈️', '#ec4899', _parent_id);
+
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Vestuário', 'expense', '👕', '#14b8a6');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Assinaturas', 'expense', '📱', '#6366f1');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Animais de estimação', 'expense', '🐾', '#a855f7');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Outros', 'expense', '📦', '#64748b');
+
+  -- Receitas
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Salário', 'income', '💰', '#22c55e');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Freelance', 'income', '💻', '#10b981');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Investimentos', 'income', '📈', '#059669');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Aluguel recebido', 'income', '🏠', '#15803d');
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Outros', 'income', '💵', '#4ade80');
+
+  -- Transferência
+  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Transferência entre contas', 'transfer', '🔄', '#0ea5e9');
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = public;
 
 -- ============================================================
 -- RPC: Atualizar saldo de conta (incremento/decremento)
@@ -477,3 +541,23 @@ CREATE TRIGGER on_income_expense_delete_balance
   FOR EACH ROW
   WHEN (OLD.type IN ('income', 'expense') AND OLD.account_id IS NOT NULL AND OLD.credit_card_id IS NULL)
   EXECUTE FUNCTION public.handle_account_balance_on_transaction();
+
+-- ============================================================
+-- Metas Financeiras (Goals)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  target_amount NUMERIC(15,2) NOT NULL,
+  current_amount NUMERIC(15,2) DEFAULT 0,
+  color TEXT,
+  icon TEXT,
+  deadline DATE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage their own goals" ON goals;
+CREATE POLICY "Users can manage their own goals" ON goals FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import packageInfo from "../../../package.json";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -14,6 +15,7 @@ import {
   Settings,
   TrendingUp,
   X,
+  Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +27,7 @@ const navItems = [
   { href: "/faturas", label: "Faturas", icon: Receipt },
   { href: "/categorias", label: "Categorias", icon: Tags },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
+  { href: "/metas", label: "Metas", icon: Target },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
@@ -93,10 +96,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* Footer */}
         <div className="p-4 border-t border-border">
           <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent">
-            <p className="text-xs text-muted-foreground">FinanceApp v1.0</p>
+            <p className="text-xs text-muted-foreground">FinanceApp v{packageInfo.version}</p>
             <p className="text-xs text-muted-foreground/60">Finanças sob controle</p>
           </div>
         </div>

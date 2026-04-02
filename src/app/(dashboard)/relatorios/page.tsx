@@ -13,7 +13,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { FileDown, FileSpreadsheet, Upload, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
+import { useCallback } from "react";
 import type { Transaction } from "@/types";
+import type { jsPDF } from "jspdf";
+
+interface jsPDFExtended extends jsPDF {
+  lastAutoTable?: {
+    finalY: number;
+  };
+}
 
 export default function RelatoriosPage() {
   const [loading, setLoading] = useState(false);
@@ -28,7 +36,7 @@ export default function RelatoriosPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<string[][]>([]);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
     const { data, error } = await supabase
@@ -44,9 +52,9 @@ export default function RelatoriosPage() {
       setTransactions((data as Transaction[]) || []);
     }
     setLoading(false);
-  };
+  }, [startDate, endDate]);
 
-  useEffect(() => { fetchReport(); }, [startDate, endDate]);
+  useEffect(() => { fetchReport(); }, [fetchReport]);
 
   const totalIncome = transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const totalExpenses = transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
@@ -64,15 +72,64 @@ export default function RelatoriosPage() {
   const exportPDF = async () => {
     const { default: jsPDF } = await import("jspdf");
     const { default: autoTable } = await import("jspdf-autotable");
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("Relatório Financeiro", 14, 20);
+    const doc = new jsPDF() as jsPDFExtended;
+    
+    // Header
+    doc.setFillColor(16, 185, 129); // emerald-500
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.text("FinanceApp PRO", 14, 20);
+    doc.setFontSize(12);
+    doc.text("Relatório Financeiro Mensal", 14, 28);
+    
     doc.setFontSize(10);
-    doc.text(`Período: ${formatDate(startDate)} - ${formatDate(endDate)}`, 14, 28);
-    doc.text(`Receitas: ${formatCurrency(totalIncome)} | Despesas: ${formatCurrency(totalExpenses)} | Saldo: ${formatCurrency(totalIncome - totalExpenses)}`, 14, 35);
+    doc.text(`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`, 140, 20);
+    doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, 140, 28);
 
+    doc.setTextColor(0, 0, 0);
+
+    // Summary
+    doc.setFontSize(14);
+    doc.text("Resumo", 14, 50);
     autoTable(doc, {
-      startY: 42,
+      startY: 55,
+      head: [["Receitas", "Despesas", "Saldo Final"]],
+      body: [[
+        formatCurrency(totalIncome),
+        formatCurrency(totalExpenses),
+        formatCurrency(totalIncome - totalExpenses)
+      ]],
+      theme: 'grid',
+      headStyles: { fillColor: [51, 65, 85], halign: 'center' },
+      bodyStyles: { halign: 'center', fontStyle: 'bold', fontSize: 12 },
+    });
+
+    let finalY = doc.lastAutoTable?.finalY || 55;
+
+    // Category Summary
+    if (categoryList.length > 0) {
+      doc.setFontSize(14);
+      doc.text("Gastos por Categoria", 14, finalY + 15);
+      autoTable(doc, {
+        startY: finalY + 20,
+        head: [["Categoria", "Total", "% das Despesas"]],
+        body: categoryList.map(c => [
+          c.name, 
+          formatCurrency(c.total), 
+          totalExpenses > 0 ? ((c.total / totalExpenses) * 100).toFixed(1) + "%" : "0%"
+        ]),
+        headStyles: { fillColor: [239, 68, 68] },
+      });
+      finalY = doc.lastAutoTable?.finalY || finalY + 20;
+    }
+
+    // Transactions Table
+    doc.setFontSize(14);
+    doc.text("Extrato Detalhado", 14, finalY + 15);
+    autoTable(doc, {
+      startY: finalY + 20,
       head: [["Data", "Descrição", "Tipo", "Categoria", "Valor"]],
       body: transactions.map(t => [
         formatDate(t.date),
@@ -81,12 +138,22 @@ export default function RelatoriosPage() {
         (t.category as { name: string } | null)?.name || "-",
         formatCurrency(Number(t.amount)),
       ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [34, 197, 94] },
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [16, 185, 129] },
+      alternateRowStyles: { fillColor: [248, 250, 252] }
     });
+    
+    // Footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Página ${i} de ${pageCount} - FinanceApp PRO v1.1.0`, 14, doc.internal.pageSize.height - 10);
+    }
 
-    doc.save(`relatorio-${startDate}-${endDate}.pdf`);
-    toast.success("PDF exportado com sucesso!");
+    doc.save(`financeapp-relatorio-${startDate}-${endDate}.pdf`);
+    toast.success("Relatório PRO PDF gerado!");
   };
 
   const exportExcel = async () => {

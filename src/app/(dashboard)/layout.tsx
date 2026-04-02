@@ -18,17 +18,16 @@ export default function DashboardLayout({
 
   useEffect(() => {
     const fetchUser = async () => {
+      const supabase = createClient();
       // Verifica limite de expiração da sessão (lógica para 12h)
       const expiry = localStorage.getItem("session_expiry");
       if (expiry && new Date().getTime() > parseInt(expiry)) {
-        const supabase = createClient();
         await supabase.auth.signOut();
         localStorage.removeItem("session_expiry");
         window.location.href = "/login";
         return;
       }
 
-      const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserEmail(user.email);
