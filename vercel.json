@@ -1,0 +1,13 @@
+{
+    "regions": [
+        "iad1"
+    ],
+    "functions": {
+        "src/app/api/**/*": {
+            "maxDuration": 30
+        },
+        "src/app/auth/callback/**/*": {
+            "maxDuration": 30
+        }
+    }
+}
