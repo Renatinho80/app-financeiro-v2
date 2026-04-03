@@ -667,19 +667,20 @@ CREATE INDEX IF NOT EXISTS idx_budgets_user_month         ON budgets(user_id, mo
 -- ============================================================
 
 -- Cartões de crédito: dia de vencimento não pode ser igual ao dia de fechamento
+-- NOT VALID: aplica-se apenas a novas inserções/updates, sem re-validar dados históricos.
 ALTER TABLE credit_cards DROP CONSTRAINT IF EXISTS chk_due_day_differs_closing;
 ALTER TABLE credit_cards ADD CONSTRAINT chk_due_day_differs_closing
-  CHECK (due_day <> closing_day);
+  CHECK (due_day <> closing_day) NOT VALID;
 
 -- Transações: valor deve ser positivo (sinal é determinado pelo campo type)
 ALTER TABLE transactions DROP CONSTRAINT IF EXISTS chk_amount_positive;
 ALTER TABLE transactions ADD CONSTRAINT chk_amount_positive
-  CHECK (amount > 0);
+  CHECK (amount > 0) NOT VALID;
 
 -- Transações: número da parcela deve ser positivo quando preenchido
 ALTER TABLE transactions DROP CONSTRAINT IF EXISTS chk_installment_number_positive;
 ALTER TABLE transactions ADD CONSTRAINT chk_installment_number_positive
-  CHECK (installment_number IS NULL OR installment_number > 0);
+  CHECK (installment_number IS NULL OR installment_number > 0) NOT VALID;
 
 -- Transações: total de parcelas deve ser >= número da parcela atual
 ALTER TABLE transactions DROP CONSTRAINT IF EXISTS chk_installment_total_valid;
@@ -687,4 +688,4 @@ ALTER TABLE transactions ADD CONSTRAINT chk_installment_total_valid
   CHECK (
     installment_total IS NULL OR
     (installment_number IS NOT NULL AND installment_total >= installment_number)
-  );
+  ) NOT VALID;
