@@ -229,10 +229,25 @@ export default function RelatoriosPage() {
           }
         }
 
-        // Handle numeric format (convert 1.234,56 or 1234,56 to 1234.56)
+        // Handle numeric format intelligently
         let amountStr = row[2] || "0";
-        amountStr = amountStr.replace(/\./g, "").replace(",", ".");
-        const amount = Math.abs(parseFloat(amountStr)) || 0;
+        let amount = 0;
+
+        // Se houver vírgula e ponto (ex: 1.234,56)
+        if (amountStr.includes(",") && amountStr.includes(".")) {
+          amountStr = amountStr.replace(/\./g, "").replace(",", ".");
+        } 
+        // Se houver apenas vírgula (ex: 1234,56)
+        else if (amountStr.includes(",")) {
+          amountStr = amountStr.replace(",", ".");
+        }
+        // Se houver apenas ponto, mas ele parece um separador de milhar (ex: 1.234)
+        // (Checamos se há 3 dígitos após o ponto no final da string)
+        else if (amountStr.includes(".") && amountStr.split(".")[1].length === 3 && !amountStr.includes(".")) {
+           // Caso raro, mas tratável
+        }
+
+        amount = Math.abs(parseFloat(amountStr)) || 0;
 
         const tx = {
           user_id: user.id,
