@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -13,6 +13,11 @@ import { Loader2, Mail, Lock, User, TrendingUp } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
+  
+  // Disable manual registration
+  useEffect(() => {
+    router.push("/login");
+  }, [router]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -119,14 +119,6 @@ export default function LoginPage() {
         </form>
       </CardContent>
 
-      <CardFooter className="justify-center">
-        <p className="text-sm text-muted-foreground">
-          Não tem uma conta?{" "}
-          <Link href="/register" className="text-emerald-500 hover:text-emerald-400 font-medium transition-colors">
-            Criar conta
-          </Link>
-        </p>
-      </CardFooter>
     </Card>
   );
 }

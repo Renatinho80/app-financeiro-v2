@@ -11,7 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
-import { FileDown, FileSpreadsheet, Upload, BarChart3, RefreshCw, AlertCircle, CheckCircle2, XCircle, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { FileDown, FileSpreadsheet, Upload, BarChart3, RefreshCw, AlertCircle, CheckCircle2, XCircle, Info, ChevronDown } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -173,7 +175,7 @@ export default function RelatoriosPage() {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setTextColor(150);
-        doc.text(`Página ${i} de ${pageCount} - FinanceApp PRO v1.1.0`, 14, doc.internal.pageSize.height - 10);
+        doc.text(`Página ${i} de ${pageCount} - FinanceApp PRO v1.5.0`, 14, doc.internal.pageSize.height - 10);
     }
 
     doc.save(`financeapp-relatorio-${startDate}-${endDate}.pdf`);
@@ -197,39 +199,64 @@ export default function RelatoriosPage() {
     toast.success("Excel exportado com sucesso!");
   };
 
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setCsvFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const lines = text.split("\n").map(l => l.split(",").map(c => c.trim()));
-      setCsvPreview(lines.slice(0, 6));
-    };
-    reader.readAsText(file);
+    
+    if (file.name.endsWith('.xls') || file.name.endsWith('.xlsx')) {
+      const XLSX = await import("xlsx");
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        let json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+
+        // Parser C6 Bank: Pular primeira linha de metadados se for o extrato original do C6
+        if (json.length > 0 && Array.isArray(json[0]) && typeof json[0][0] === 'string' && (json[0][0].startsWith('Nome:') || json[0][0].startsWith('Cartão:'))) {
+          json = json.slice(1);
+        }
+        
+        setCsvPreview(json.slice(0, 6).map(row => (row || []).map(v => String(v || ""))));
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = ev.target?.result as string;
+        const allLines = text.split("\n").filter(l => l.trim() !== "");
+        if (allLines.length === 0) return;
+
+        // Detectar delimitador inteligente baseado na primeira linha (headeR)
+        const delimiters = [",", ";", "\t", "|"];
+        const headerLine = allLines[0];
+        const separator = delimiters.reduce((prev, curr) => {
+          return (headerLine.split(curr).length > headerLine.split(prev).length) ? curr : prev;
+        });
+
+        const lines = allLines.map(line => line.split(separator).map(c => c.trim()));
+        setCsvPreview(lines.slice(0, 6));
+      };
+      reader.readAsText(file);
+    }
   };
 
   const importCsv = async () => {
     if (!csvFile || !importTargetType || !importTargetId) return;
     
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const text = ev.target?.result as string;
-      const lines = text.split("\n").filter(l => l.trim() !== "");
-      if (lines.length < 2) {
+    const isExcel = csvFile.name.endsWith('.xls') || csvFile.name.endsWith('.xlsx');
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const processData = async (parsedLines: string[][]) => {
+      if (parsedLines.length < 2) {
         toast.error("Arquivo vazio ou sem dados.");
         return;
       }
 
-      // Robust separator detection
-      const delimiters = [",", ";", "\t", "|"];
-      const headerLine = lines[0];
-      const separator = delimiters.reduce((prev, curr) => {
-        return (headerLine.split(curr).length > headerLine.split(prev).length) ? curr : prev;
-      });
-      
-      const parsedLines = lines.map(l => l.split(separator).map(c => c.trim()));
       const headerRow = parsedLines[0].map(h => h.toLowerCase());
       
       const colIndex = {
@@ -238,17 +265,14 @@ export default function RelatoriosPage() {
         val: headerRow.findIndex(h => h.includes("valor")),
         type: headerRow.findIndex(h => h.includes("tipo")),
         method: headerRow.findIndex(h => h.includes("metodo") || h.includes("método")),
-        cat: headerRow.findIndex(h => h.includes("categoria"))
+        cat: headerRow.findIndex(h => h.includes("categoria")),
+        parcela: headerRow.findIndex(h => h.includes("parcela"))
       };
 
       if (colIndex.date === -1 || colIndex.desc === -1 || colIndex.val === -1) {
         toast.error("Colunas obrigatórias não encontradas (Data, Descrição, Valor).");
         return;
       }
-
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
       setIsImporting(true);
       setImportProgress(0);
@@ -264,8 +288,13 @@ export default function RelatoriosPage() {
         if (row.length < 2 || (row.length === 1 && !row[0])) continue;
 
         let date = row[colIndex.date] || "";
-        const description = colIndex.desc !== -1 ? row[colIndex.desc] : "";
-        const valStr = colIndex.val !== -1 ? row[colIndex.val] : "";
+        let description = colIndex.desc !== -1 ? row[colIndex.desc] : "";
+        const valStr = colIndex.val !== -1 ? String(row[colIndex.val]) : "";
+
+        // Concatenar parcela na descrição se existir
+        if (colIndex.parcela !== -1 && row[colIndex.parcela] && row[colIndex.parcela].toLowerCase() !== "única") {
+          description = `${description} (${row[colIndex.parcela]})`;
+        }
 
         // Validar campos básicos
         if (!date || !description || !valStr) {
@@ -287,26 +316,41 @@ export default function RelatoriosPage() {
           continue;
         }
 
-        // Validar valor
+        // Validar valor e tratar inversão C6 Bank
         let amountStr = valStr;
         if (amountStr.includes(",") && amountStr.includes(".")) {
           amountStr = amountStr.replace(/\./g, "").replace(",", ".");
         } else if (amountStr.includes(",")) {
           amountStr = amountStr.replace(",", ".");
         }
-        const amount = Math.abs(parseFloat(amountStr));
-        if (isNaN(amount)) {
+        
+        let amountValue = parseFloat(amountStr);
+        let type: "income" | "expense" | "transfer" = "expense";
+
+        // Mapear Tipo e Método
+        const rawType = colIndex.type !== -1 ? (row[colIndex.type] || "").toLowerCase() : "";
+        
+        if (rawType) {
+          if (["receita", "entrada", "income"].includes(rawType)) type = "income";
+          else if (["despesa", "saída", "saida", "gasto", "expense"].includes(rawType)) type = "expense";
+          else if (["transferência", "transferencia", "transfer"].includes(rawType)) type = "transfer";
+        } else if (isExcel) {
+          // Lógica C6: Valor negativo = Pagamento/Estorno (Receita/Crédito na fatura), Positivo = Compra (Despesa)
+          if (amountValue < 0) {
+            type = "income";
+            amountValue = Math.abs(amountValue);
+          } else {
+            type = "expense";
+          }
+        } else {
+          amountValue = Math.abs(amountValue);
+        }
+
+        if (isNaN(amountValue)) {
           results.errors++;
           results.details.push({ line: i + 1, description, status: "error", reason: "Valor numérico inválido" });
           continue;
         }
-
-        // Mapear Tipo e Método
-        const rawType = colIndex.type !== -1 ? (row[colIndex.type] || "expense").toLowerCase() : "expense";
-        let type: "income" | "expense" | "transfer" = "expense";
-        if (["receita", "entrada", "income"].includes(rawType)) type = "income";
-        else if (["despesa", "saída", "saida", "gasto", "expense"].includes(rawType)) type = "expense";
-        else if (["transferência", "transferencia", "transfer"].includes(rawType)) type = "transfer";
 
         const rawMethod = colIndex.method !== -1 ? (row[colIndex.method] || "").toLowerCase() : "";
         let payment_method: "pix" | "ted" | "doc" | "cash" | null = null;
@@ -316,9 +360,9 @@ export default function RelatoriosPage() {
         else if (["dinheiro", "espécie", "especie", "cash"].includes(rawMethod)) payment_method = "cash";
 
         const catName = colIndex.cat !== -1 ? row[colIndex.cat]?.trim() : null;
-        if (catName) newCategoryNames.add(catName);
+        if (catName && catName !== "-") newCategoryNames.add(catName);
 
-        transactionsToInsert.push({ date, description, amount, type, payment_method, rawCategory: catName, line: i + 1 });
+        transactionsToInsert.push({ date, description, amount: amountValue, type, payment_method, rawCategory: catName, line: i + 1 });
       }
 
       // Checar limite de erro na pré-validação (25%)
@@ -371,7 +415,7 @@ export default function RelatoriosPage() {
           date: tx.date,
           type: tx.type,
           payment_method: tx.payment_method,
-          category_id: tx.rawCategory ? categoryMap.get(tx.rawCategory.toLowerCase()) : null,
+          category_id: (tx.rawCategory && tx.rawCategory !== "-") ? categoryMap.get(tx.rawCategory.toLowerCase()) : null,
           account_id: importTargetType === "account" ? importTargetId : null,
           credit_card_id: importTargetType === "credit_card" ? importTargetId : null,
           invoice_id: invoiceId,
@@ -407,9 +451,55 @@ export default function RelatoriosPage() {
       setIsImportOpen(false);
       setCsvFile(null);
       setImportProgress(0);
+      
+      // Marcar faturas anteriores como pagas se for cartão
+      if (importTargetType === "credit_card") {
+         const today = new Date().toISOString().split('T')[0];
+         await supabase.from("invoices")
+          .update({ status: 'paid' })
+          .lt("closing_date", today)
+          .eq("credit_card_id", importTargetId)
+          .eq("status", "open");
+      }
+      
       fetchReport();
     };
-    reader.readAsText(csvFile);
+
+    if (isExcel) {
+      const XLSX = await import("xlsx");
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        let json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+        
+        // Parser C6 Bank: Pular primeira linha de metadados se for o extrato original do C6
+        if (json.length > 0 && Array.isArray(json[0]) && typeof json[0][0] === 'string' && (json[0][0].startsWith('Nome:') || json[0][0].startsWith('Cartão:'))) {
+          json = json.slice(1);
+        }
+        
+        processData(json.map(row => (row || []).map(v => String(v ?? ""))));
+      };
+      reader.readAsArrayBuffer(csvFile);
+    } else {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const text = ev.target?.result as string;
+        const lines = text.split("\n").filter(l => l.trim() !== "");
+        if (lines.length < 2) return processData([]);
+        
+        const delimiters = [",", ";", "\t", "|"];
+        const headerLine = lines[0];
+        const separator = delimiters.reduce((prev, curr) => {
+          return (headerLine.split(curr).length > headerLine.split(prev).length) ? curr : prev;
+        });
+        
+        processData(lines.map(l => l.split(separator).map(c => c.trim())));
+      };
+      reader.readAsText(csvFile);
+    }
   };
 
   return (
@@ -419,7 +509,10 @@ export default function RelatoriosPage() {
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={exportPDF}><FileDown className="w-4 h-4 mr-1" /> PDF</Button>
           <Button variant="outline" size="sm" onClick={exportExcel}><FileSpreadsheet className="w-4 h-4 mr-1" /> Excel</Button>
-          <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)}><Upload className="w-4 h-4 mr-1" /> Importar CSV</Button>
+          <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="gap-1">
+            <Upload className="w-4 h-4" />
+            Importar Arquivo
+          </Button>
         </div>
       </div>
 
@@ -523,32 +616,72 @@ export default function RelatoriosPage() {
       </Tabs>
 
       {/* CSV Import Dialog */}
-      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Importar CSV</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+      <Dialog open={isImportOpen} onOpenChange={(open) => {
+        setIsImportOpen(open);
+        if (!open) {
+          setCsvFile(null);
+          setCsvPreview([]);
+          setImportTargetType("");
+          setImportTargetId("");
+          setImportProgress(0);
+          setTotalRowsToImport(0);
+        }
+      }}>
+        <DialogContent className="max-w-[90vw] md:max-w-[80vw] w-full overflow-hidden flex flex-col p-4 sm:p-6 transition-all">
+          <DialogHeader className="pb-2"><DialogTitle className="text-xl font-bold">Importar Transações (CSV ou Excel)</DialogTitle></DialogHeader>
+          <div className="space-y-4 overflow-y-auto max-h-[75vh] px-1 custom-scrollbar">
             <div className="flex items-center justify-between p-3 border rounded-lg bg-emerald-500/10 border-emerald-500/20">
               <div className="text-sm">
                 <p className="font-medium">Precisa do modelo?</p>
                 <p className="text-muted-foreground">Baixe o formato aceito pelo sistema.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => {
-                const csvContent = "\uFEFFData,Descrição,Valor,Tipo,Método,Categoria\n" +
-                  "2026-03-01,Salário Empresa,5500.00,income,pix,Salário\n" +
-                  "2026-03-05,Aluguel,1200.00,expense,ted,Moradia\n" +
-                  "2026-03-10,Mercado Central,350.50,expense,pix,Alimentação\n" +
-                  "2026-03-15,Jantar,80.00,expense,pix,Lazer\n" +
-                  "2026-03-20,Venda de Item,120.00,income,cash,Outros";
-                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.setAttribute("download", "modelo_transacoes.csv");
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}>
-                Baixar CSV
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <FileDown className="w-4 h-4" />
+                    Baixar Modelo
+                    <ChevronDown className="w-3 h-3 opacity-50" />
+                  </Button>
+                } />
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => {
+                    const csvContent = "\uFEFFData,Descrição,Categoria,Valor (em R$),Tipo,Método,Parcela\n" +
+                      "2026-04-01,Assinatura Spotify,Assinatura,-14.90,expense,pix,1/1\n" +
+                      "2026-04-05,Pix Recebido,Outros,150.00,income,pix,Única\n" +
+                      "2026-04-10,Mercado Central,Alimentação,350.50,expense,cash,1/1\n" +
+                      "2026-04-12,Amazon Compra,Compras,1200.00,expense,,1/10\n" +
+                      "2026-04-15,Reembolso,,50.00,income,ted,";
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.setAttribute("download", "modelo_transacoes.csv");
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}>
+                    <FileDown className="w-4 h-4 mr-2" />
+                    Modelo CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={async () => {
+                    const XLSX = await import("xlsx");
+                    const data = [
+                      ["Data", "Descrição", "Categoria", "Valor (em R$)", "Tipo", "Método", "Parcela"],
+                      ["2026-04-01", "Assinatura Spotify", "Assinatura", -14.90, "expense", "pix", "1/1"],
+                      ["2026-04-05", "Pix Recebido", "Outros", 150.00, "income", "pix", "Única"],
+                      ["2026-04-10", "Mercado Central", "Alimentação", 350.50, "expense", "cash", "1/1"],
+                      ["2026-04-12", "Amazon Compra", "Compras", 1200.00, "expense", "", "1/10"],
+                      ["2026-04-15", "Reembolso", "", 50.00, "income", "ted", ""]
+                    ];
+                    const ws = XLSX.utils.aoa_to_sheet(data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Transações");
+                    XLSX.writeFile(wb, "modelo_transacoes.xlsx");
+                  }}>
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Modelo Excel (.xlsx)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
               <p className="font-medium">Formato esperado (Campos OBRIGATÓRIOS):</p>
@@ -591,17 +724,24 @@ export default function RelatoriosPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Arquivo CSV:</Label>
-              <Input type="file" accept=".csv" onChange={handleCsvUpload} />
+              <Label>Arquivo CSV/Excel:</Label>
+              <Input key={isImportOpen ? 'open' : 'closed'} type="file" accept=".csv, .xls, .xlsx" onChange={handleCsvUpload} />
             </div>
 
             {csvPreview.length > 0 && (
-              <div className="border rounded overflow-hidden">
-                <Table>
+              <div className="border rounded-xl overflow-x-auto bg-muted/20 max-w-full shadow-inner">
+                <Table className="w-full">
                   <TableBody>
-                    {csvPreview.slice(0, 4).map((row, i) => (
-                      <TableRow key={i} className={i === 0 ? "bg-muted font-bold" : ""}>
-                        {row.map((cell, j) => <TableCell key={j} className="p-2 text-[10px] truncate max-w-[100px]">{cell}</TableCell>)}
+                    {csvPreview.slice(0, 6).map((row, i) => (
+                      <TableRow key={i} className={cn(
+                        "hover:bg-muted/30 transition-colors",
+                        i === 0 ? "bg-muted font-bold sticky top-0" : ""
+                      )}>
+                        {row.map((cell, j) => (
+                          <TableCell key={j} className="p-3 text-[11px] whitespace-nowrap border-r border-border/50 last:border-0" title={cell}>
+                            {cell}
+                          </TableCell>
+                        ))}
                       </TableRow>
                     ))}
                   </TableBody>
