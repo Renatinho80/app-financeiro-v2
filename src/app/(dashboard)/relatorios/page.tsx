@@ -1,5 +1,7 @@
 "use client";
 
+import packageInfo from "../../../../package.json";
+
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -175,7 +177,7 @@ export default function RelatoriosPage() {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setTextColor(150);
-        doc.text(`Página ${i} de ${pageCount} - FinanceApp PRO v1.5.0`, 14, doc.internal.pageSize.height - 10);
+        doc.text(`Página ${i} de ${pageCount} - FinanceApp PRO v${packageInfo.version}`, 14, doc.internal.pageSize.height - 10);
     }
 
     doc.save(`financeapp-relatorio-${startDate}-${endDate}.pdf`);
@@ -392,12 +394,27 @@ export default function RelatoriosPage() {
       for (let i = 0; i < transactionsToInsert.length; i++) {
         const tx = transactionsToInsert[i];
 
+        const currentCatId = (tx.rawCategory && tx.rawCategory !== "-") ? categoryMap.get(tx.rawCategory.toLowerCase()) : null;
+
         // 3a. Deduplication check
-        const { data: existing } = await supabase.from("transactions").select("id").eq("user_id", user.id).eq("date", tx.date).eq("amount", tx.amount).eq("description", tx.description).maybeSingle();
+        let duplicateQuery = supabase.from("transactions")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("date", tx.date)
+          .eq("amount", tx.amount)
+          .eq("description", tx.description);
+
+        if (currentCatId) {
+          duplicateQuery = duplicateQuery.eq("category_id", currentCatId);
+        } else {
+          duplicateQuery = duplicateQuery.is("category_id", null);
+        }
+
+        const { data: existing } = await duplicateQuery.maybeSingle();
 
         if (existing) {
           results.skipped++;
-          results.details.push({ line: tx.line, description: tx.description, status: "skip", reason: "Transação duplicada" });
+          results.details.push({ line: tx.line, description: tx.description, status: "skip", reason: "Transação idêntica já existe (mesma data, valor, categoria e nome)" });
           setImportProgress(i + 1);
           continue;
         }
@@ -415,7 +432,7 @@ export default function RelatoriosPage() {
           date: tx.date,
           type: tx.type,
           payment_method: tx.payment_method,
-          category_id: (tx.rawCategory && tx.rawCategory !== "-") ? categoryMap.get(tx.rawCategory.toLowerCase()) : null,
+          category_id: currentCatId,
           account_id: importTargetType === "account" ? importTargetId : null,
           credit_card_id: importTargetType === "credit_card" ? importTargetId : null,
           invoice_id: invoiceId,

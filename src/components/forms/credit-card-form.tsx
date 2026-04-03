@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { BANKS, ACCOUNT_COLORS } from "@/lib/utils/constants";
 import type { CreditCard } from "@/types";
 
@@ -22,6 +23,7 @@ export function CreditCardForm({ defaultValues, onSubmit, onCancel }: CreditCard
   const [closingDay, setClosingDay] = useState(defaultValues?.closing_day || 1);
   const [dueDay, setDueDay] = useState(defaultValues?.due_day || 10);
   const [color, setColor] = useState(defaultValues?.color || ACCOUNT_COLORS[1]);
+  const [isActive, setIsActive] = useState(defaultValues?.is_active ?? true);
   const [submitting, setSubmitting] = useState(false);
 
   const handleLimitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -40,7 +42,15 @@ export function CreditCardForm({ defaultValues, onSubmit, onCancel }: CreditCard
     e.preventDefault();
     if (!name.trim()) return;
     setSubmitting(true);
-    await onSubmit({ name, bank: bank || undefined, limit_amount: Number(limitAmount), closing_day: Number(closingDay), due_day: Number(dueDay), color });
+    await onSubmit({ 
+      name, 
+      bank: bank || undefined, 
+      limit_amount: Number(limitAmount), 
+      closing_day: Number(closingDay), 
+      due_day: Number(dueDay), 
+      color,
+      is_active: isActive
+    });
     setSubmitting(false);
   };
 
@@ -50,12 +60,20 @@ export function CreditCardForm({ defaultValues, onSubmit, onCancel }: CreditCard
         <Label htmlFor="name">Nome do cartão *</Label>
         <Input id="name" placeholder="Ex: Nubank Platinum" value={name} onChange={e => setName(e.target.value)} required />
       </div>
-      <div className="space-y-2">
-        <Label>Banco</Label>
-        <Select value={bank} onValueChange={(v) => v && setBank(v)}>
-          <SelectTrigger><SelectValue placeholder="Selecione o banco" /></SelectTrigger>
-          <SelectContent>{BANKS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
-        </Select>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Banco</Label>
+          <Select value={bank} onValueChange={(v) => v && setBank(v)}>
+            <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <SelectContent>{BANKS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-end pb-2">
+          <div className="flex items-center gap-3 bg-muted/30 px-3 py-2 rounded-lg border border-transparent hover:border-border transition-colors w-full h-10">
+            <Switch id="active" checked={isActive} onCheckedChange={setIsActive} />
+            <Label htmlFor="active" className="cursor-pointer text-xs font-medium">Cartão Ativo</Label>
+          </div>
+        </div>
       </div>
       <div className="space-y-2">
         <Label htmlFor="limit">Limite (R$) *</Label>
@@ -94,7 +112,7 @@ export function CreditCardForm({ defaultValues, onSubmit, onCancel }: CreditCard
       <div className="flex gap-3 pt-2">
         <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={submitting}>
-          {defaultValues ? "Salvar" : "Criar Cartão"}
+          {defaultValues?.id ? "Salvar Alterações" : "Criar Cartão"}
         </Button>
       </div>
     </form>

@@ -59,6 +59,7 @@ export default function CartoesPage() {
               <DialogTitle>{editing ? "Editar Cartão" : "Novo Cartão"}</DialogTitle>
             </DialogHeader>
             <CreditCardForm
+              key={editing?.id || "new"}
               defaultValues={editing || undefined}
               onSubmit={handleSubmit}
               onCancel={() => { setIsDialogOpen(false); setEditing(null); }}
@@ -82,7 +83,7 @@ export default function CartoesPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {creditCards.map(card => (
             <Card key={card.id} className="group relative overflow-hidden hover:shadow-lg hover:shadow-purple-500/5 transition-all">
-              <div className="absolute inset-0 bg-gradient-to-br opacity-5" style={{ background: `linear-gradient(135deg, ${card.color || "#8b5cf6"}22, transparent)` }} />
+              <div className="absolute inset-0 bg-gradient-to-br opacity-5 pointer-events-none" style={{ background: `linear-gradient(135deg, ${card.color || "#8b5cf6"}22, transparent)` }} />
               <div className="absolute top-0 left-0 w-full h-1" style={{ backgroundColor: card.color || "#8b5cf6" }} />
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -143,7 +144,7 @@ export default function CartoesPage() {
                     </>
                   );
                 })()}
-                <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 justify-end opacity-40 hover:opacity-100 transition-opacity">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(card); setIsDialogOpen(true); }}>
                     <Pencil className="w-4 h-4" />
                   </Button>

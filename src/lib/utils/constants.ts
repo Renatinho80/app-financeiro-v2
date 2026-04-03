@@ -41,7 +41,7 @@ export const DEFAULT_CATEGORIES = {
 
 export const ACCOUNT_COLORS = [
   "#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#22c55e",
-  "#06b6d4", "#ef4444", "#a855f7", "#14b8a6", "#6366f1",
+  "#06b6d4", "#ef4444", "#a855f7", "#14b8a6", "#6366f1", "#64748b",
 ];
 
 export const CHART_COLORS = [
