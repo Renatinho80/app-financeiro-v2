@@ -1,31 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import useSWR, { mutate as globalMutate } from "swr";
 import { createClient } from "@/lib/supabase/client";
 import type { Account } from "@/types";
 import { toast } from "sonner";
 
+const fetcher = async () => {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data as Account[];
+};
+
 export function useAccounts() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchAccounts = useCallback(async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("accounts")
-      .select("*")
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      toast.error("Erro ao carregar contas", { description: error.message });
-    } else {
-      setAccounts((data as Account[]) || []);
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
+  const { data: accounts = [], error, isLoading, mutate } = useSWR("accounts", fetcher, {
+    revalidateOnFocus: false,
+    revalidateIfStale: false
+  });
 
   const createAccount = async (data: Partial<Account>) => {
     const supabase = createClient();
@@ -38,7 +33,7 @@ export function useAccounts() {
       return false;
     }
     toast.success("Conta criada com sucesso!");
-    await fetchAccounts();
+    mutate(); // Refresh globally instantly
     return true;
   };
 
@@ -50,7 +45,7 @@ export function useAccounts() {
       return false;
     }
     toast.success("Conta atualizada com sucesso!");
-    await fetchAccounts();
+    mutate();
     return true;
   };
 
@@ -62,11 +57,20 @@ export function useAccounts() {
       return false;
     }
     toast.success("Conta excluída com sucesso!");
-    await fetchAccounts();
+    mutate();
     return true;
   };
 
   const totalBalance = accounts.filter(a => a.is_active).reduce((sum, a) => sum + Number(a.balance), 0);
 
-  return { accounts, loading, totalBalance, createAccount, updateAccount, deleteAccount, refetch: fetchAccounts };
+  return { 
+    accounts, 
+    loading: isLoading, 
+    error,
+    totalBalance, 
+    createAccount, 
+    updateAccount, 
+    deleteAccount, 
+    refetch: mutate 
+  };
 }

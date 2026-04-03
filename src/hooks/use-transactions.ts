@@ -1,5 +1,7 @@
 "use client";
 
+import { mutate as globalMutate } from "swr";
+
 import { useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Transaction, TransactionFilters } from "@/types";
@@ -7,19 +9,19 @@ import type { TransactionFormData } from "@/lib/validations/transaction";
 import { toast } from "sonner";
 import { addMonths, addWeeks, addDays, addYears, format } from "date-fns";
 
-const PAGE_SIZE = 20;
-
 export function useTransactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
 
-  const fetchTransactions = useCallback(async (filters?: TransactionFilters, pageNum = 1) => {
+  const fetchTransactions = useCallback(async (filters?: TransactionFilters, pageNum = 1, size = 20) => {
     setLoading(true);
     const supabase = createClient();
-    const from = (pageNum - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const from = (pageNum - 1) * size;
+    const to = from + size - 1;
 
     let query = supabase
       .from("transactions")
@@ -45,6 +47,7 @@ export function useTransactions() {
       setTransactions((data as Transaction[]) || []);
       setTotal(count || 0);
       setPage(pageNum);
+      setTotalPages(Math.ceil((count || 0) / size));
     }
     setLoading(false);
   }, []);
@@ -110,6 +113,8 @@ export function useTransactions() {
         return false;
       }
       toast.success(`${txData.installment_total} parcelas criadas!`);
+      globalMutate("accounts");
+      globalMutate("credit_cards");
     }
     // Handle recurring
     else if (txData.is_recurring && txData.recurrence_type) {
@@ -150,6 +155,8 @@ export function useTransactions() {
         return false;
       }
       toast.success(`${txs.length} transações recorrentes criadas!`);
+      globalMutate("accounts");
+      globalMutate("credit_cards");
     }
     // Single transaction
     else {
@@ -179,6 +186,8 @@ export function useTransactions() {
 
       // Note: account balance updates are handled by database triggers now
       toast.success("Transação criada com sucesso!");
+      globalMutate("accounts");
+      globalMutate("credit_cards");
     }
 
     return true;
@@ -203,6 +212,8 @@ export function useTransactions() {
     }
 
     toast.success("Transação atualizada!");
+    globalMutate("accounts");
+    globalMutate("credit_cards");
     return true;
   };
 
@@ -224,13 +235,16 @@ export function useTransactions() {
       }
       toast.success("Transação excluída!");
     }
+    
+    // Atualizar saldos globais
+    globalMutate("accounts");
+    globalMutate("credit_cards");
+    
     return true;
   };
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
   return {
-    transactions, loading, total, page, totalPages,
+    transactions, loading, total, page, totalPages, pageSize,
     fetchTransactions, createTransaction, updateTransaction, deleteTransaction, setPage,
   };
 }

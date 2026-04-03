@@ -56,7 +56,11 @@ export default function DashboardPage() {
         .gte("date", start).lte("date", end);
       const monthExpenses = (expenseData || []).reduce((sum: number, t: { amount: number }) => sum + Number(t.amount), 0);
 
-      setSummary({ totalBalance, monthIncome, monthExpenses, monthBalance: monthIncome - monthExpenses });
+      // Invoices debt (Total from open/closed invoices)
+      const { data: invoices } = await supabase.from("invoices").select("total_amount").in("status", ["open", "closed"]);
+      const totalInvoicesDebt = (invoices || []).reduce((sum: number, i: { total_amount: number }) => sum + Number(i.total_amount), 0);
+
+      setSummary({ totalBalance: totalBalance - totalInvoicesDebt, monthIncome, monthExpenses, monthBalance: monthIncome - monthExpenses });
 
       // Expenses by category
       const { data: catExp } = await supabase

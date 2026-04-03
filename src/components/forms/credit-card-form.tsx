@@ -18,10 +18,23 @@ export function CreditCardForm({ defaultValues, onSubmit, onCancel }: CreditCard
   const [name, setName] = useState(defaultValues?.name || "");
   const [bank, setBank] = useState(defaultValues?.bank || "");
   const [limitAmount, setLimitAmount] = useState(defaultValues?.limit_amount || 0);
+  const [limitStr, setLimitStr] = useState(defaultValues?.limit_amount ? defaultValues.limit_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "");
   const [closingDay, setClosingDay] = useState(defaultValues?.closing_day || 1);
   const [dueDay, setDueDay] = useState(defaultValues?.due_day || 10);
   const [color, setColor] = useState(defaultValues?.color || ACCOUNT_COLORS[1]);
   const [submitting, setSubmitting] = useState(false);
+
+  const handleLimitChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    if (!raw) {
+      setLimitStr("");
+      setLimitAmount(0);
+      return;
+    }
+    const num = Number(raw) / 100;
+    setLimitAmount(num);
+    setLimitStr(num.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +59,17 @@ export function CreditCardForm({ defaultValues, onSubmit, onCancel }: CreditCard
       </div>
       <div className="space-y-2">
         <Label htmlFor="limit">Limite (R$) *</Label>
-        <Input id="limit" type="number" step="0.01" value={limitAmount} onChange={e => setLimitAmount(Number(e.target.value))} required />
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">R$</span>
+          <Input 
+            id="limit" 
+            placeholder="0,00"
+            className="pl-9 font-semibold"
+            value={limitStr} 
+            onChange={handleLimitChange} 
+            required 
+          />
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

@@ -1,38 +1,35 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import useSWR, { mutate as globalMutate } from "swr";
 import { createClient } from "@/lib/supabase/client";
 import type { Category } from "@/types";
 import { toast } from "sonner";
 
+const fetcher = async () => {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("categories")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+  
+  // Build hierarchy
+  const allCats = (data as Category[]) || [];
+  const parents = allCats.filter(c => !c.parent_id);
+  const withSubs = parents.map(p => ({
+    ...p,
+    subcategories: allCats.filter(c => c.parent_id === p.id),
+  }));
+  return withSubs;
+};
+
 export function useCategories() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchCategories = useCallback(async () => {
-    setLoading(true);
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("categories")
-      .select("*")
-      .order("name", { ascending: true });
-
-    if (error) {
-      toast.error("Erro ao carregar categorias", { description: error.message });
-    } else {
-      // Build hierarchy
-      const allCats = (data as Category[]) || [];
-      const parents = allCats.filter(c => !c.parent_id);
-      const withSubs = parents.map(p => ({
-        ...p,
-        subcategories: allCats.filter(c => c.parent_id === p.id),
-      }));
-      setCategories(withSubs);
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
+  const { data: categories = [], error, isLoading, mutate } = useSWR("categories", fetcher, {
+    revalidateOnFocus: false,
+    revalidateIfStale: false
+  });
 
   const allFlat = useCallback(() => {
     const flat: Category[] = [];
@@ -54,7 +51,7 @@ export function useCategories() {
       return false;
     }
     toast.success("Categoria criada com sucesso!");
-    await fetchCategories();
+    mutate();
     return true;
   };
 
@@ -66,7 +63,7 @@ export function useCategories() {
       return false;
     }
     toast.success("Categoria atualizada com sucesso!");
-    await fetchCategories();
+    mutate();
     return true;
   };
 
@@ -91,9 +88,18 @@ export function useCategories() {
       return false;
     }
     toast.success("Categoria excluída com sucesso!");
-    await fetchCategories();
+    mutate();
     return true;
   };
 
-  return { categories, loading, allFlat, createCategory, updateCategory, deleteCategory, refetch: fetchCategories };
+  return { 
+    categories, 
+    loading: isLoading, 
+    error,
+    allFlat, 
+    createCategory, 
+    updateCategory, 
+    deleteCategory, 
+    refetch: mutate 
+  };
 }

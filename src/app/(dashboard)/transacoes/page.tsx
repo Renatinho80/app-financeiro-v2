@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate, getTransactionTypeLabel, getTransactionStatusLabel } from "@/lib/utils/format";
-import { Plus, Search, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, ChevronLeft, ChevronRight, Pencil, Trash2, Copy, Download } from "lucide-react";
+import { Plus, Search, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, Trash2, Copy, Download } from "lucide-react";
 import type { Transaction, TransactionFilters } from "@/types";
 
 const typeColors: Record<string, string> = {
@@ -33,7 +33,7 @@ const typeIcons: Record<string, React.ReactNode> = {
 };
 
 export default function TransacoesPage() {
-  const { transactions, loading, total, page, totalPages, fetchTransactions, createTransaction, updateTransaction, deleteTransaction } = useTransactions();
+  const { transactions, loading, total, page, totalPages, pageSize, fetchTransactions, createTransaction, updateTransaction, deleteTransaction } = useTransactions();
   const { accounts } = useAccounts();
   const { creditCards } = useCreditCards();
   const { categories, allFlat } = useCategories();
@@ -42,11 +42,22 @@ export default function TransacoesPage() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [filters, setFilters] = useState<TransactionFilters>({});
   const [search, setSearch] = useState("");
+  const [pageInput, setPageInput] = useState("");
 
-  useEffect(() => { fetchTransactions(filters, 1); }, [fetchTransactions, filters]);
+  useEffect(() => { fetchTransactions(filters, page); }, [fetchTransactions, filters, page]);
 
   const handleSearch = () => {
     setFilters(prev => ({ ...prev, search }));
+  };
+
+  const handlePageJump = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      const targetPage = parseInt(pageInput);
+      if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= totalPages) {
+        fetchTransactions(filters, targetPage, pageSize);
+      }
+      setPageInput("");
+    }
   };
 
   const handleCreateOrUpdate = async (data: Parameters<typeof createTransaction>[0]) => {
@@ -121,6 +132,20 @@ export default function TransacoesPage() {
                 <SelectItem value="pending">Pendente</SelectItem>
               </SelectContent>
             </Select>
+            <Input
+              type="date"
+              className="w-full sm:w-auto"
+              value={filters.startDate || ""}
+              onChange={e => setFilters(prev => ({ ...prev, startDate: e.target.value || undefined }))}
+              title="Data inicial"
+            />
+            <Input
+              type="date"
+              className="w-full sm:w-auto"
+              value={filters.endDate || ""}
+              onChange={e => setFilters(prev => ({ ...prev, endDate: e.target.value || undefined }))}
+              title="Data final"
+            />
           </div>
         </CardContent>
       </Card>
@@ -183,15 +208,49 @@ export default function TransacoesPage() {
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => fetchTransactions(filters, page - 1)}>
-            <ChevronLeft className="w-4 h-4" /> Anterior
-          </Button>
-          <span className="text-sm text-muted-foreground">Página {page} de {totalPages}</span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => fetchTransactions(filters, page + 1)}>
-            Próxima <ChevronRight className="w-4 h-4" />
-          </Button>
+      {totalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-2 text-sm text-muted-foreground w-full">
+          <div className="flex items-center gap-2">
+            <span>Itens por página</span>
+            <Select 
+              value={pageSize.toString()} 
+              onValueChange={v => fetchTransactions(filters, 1, parseInt(v || "20"))}
+            >
+              <SelectTrigger className="w-[70px] h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <span className="shrink-0">Página {page} de {totalPages}</span>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => fetchTransactions(filters, 1, pageSize)}>
+                <ChevronsLeft className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => fetchTransactions(filters, page - 1, pageSize)}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <Input 
+                className="w-12 h-8 text-center" 
+                placeholder="Nº" 
+                value={pageInput} 
+                onChange={(e) => setPageInput(e.target.value)} 
+                onKeyDown={handlePageJump}
+                title="Pressione Enter para ir à página"
+              />
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => fetchTransactions(filters, page + 1, pageSize)}>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => fetchTransactions(filters, totalPages, pageSize)}>
+                <ChevronsRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

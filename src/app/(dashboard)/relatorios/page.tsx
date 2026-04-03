@@ -11,11 +11,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
-import { FileDown, FileSpreadsheet, Upload, BarChart3 } from "lucide-react";
+import { FileDown, FileSpreadsheet, Upload, BarChart3, RefreshCw, AlertCircle, CheckCircle2, XCircle, Info } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { useCallback } from "react";
 import type { Transaction } from "@/types";
 import type { jsPDF } from "jspdf";
+import { useAccounts } from "@/hooks/use-accounts";
+import { useCreditCards } from "@/hooks/use-credit-cards";
+import { useCategories } from "@/hooks/use-categories";
 
 interface jsPDFExtended extends jsPDF {
   lastAutoTable?: {
@@ -35,6 +42,23 @@ export default function RelatoriosPage() {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<string[][]>([]);
+  const [importProgress, setImportProgress] = useState(0);
+  const [isImporting, setIsImporting] = useState(false);
+  const [totalRowsToImport, setTotalRowsToImport] = useState(0);
+  const [importResults, setImportResults] = useState<{
+    success: number;
+    errors: number;
+    skipped: number;
+    details: { line: number; description: string; status: "success" | "error" | "skip"; reason: string }[];
+  } | null>(null);
+  const [isResultsOpen, setIsResultsOpen] = useState(false);
+
+  // Import states
+  const { accounts } = useAccounts();
+  const { creditCards } = useCreditCards();
+  const { allFlat, refetch: refetchCategories } = useCategories();
+  const [importTargetType, setImportTargetType] = useState<"account" | "credit_card" | "">("");
+  const [importTargetId, setImportTargetId] = useState("");
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -187,28 +211,38 @@ export default function RelatoriosPage() {
   };
 
   const importCsv = async () => {
-    if (!csvFile) return;
+    if (!csvFile || !importTargetType || !importTargetId) return;
+    
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const text = ev.target?.result as string;
       const lines = text.split("\n").filter(l => l.trim() !== "");
-      if (lines.length === 0) return;
+      if (lines.length < 2) {
+        toast.error("Arquivo vazio ou sem dados.");
+        return;
+      }
 
       // Robust separator detection
       const delimiters = [",", ";", "\t", "|"];
-      const header = lines[0];
+      const headerLine = lines[0];
       const separator = delimiters.reduce((prev, curr) => {
-        return (header.split(curr).length > header.split(prev).length) ? curr : prev;
+        return (headerLine.split(curr).length > headerLine.split(prev).length) ? curr : prev;
       });
       
       const parsedLines = lines.map(l => l.split(separator).map(c => c.trim()));
-      const rows = parsedLines.slice(1).filter(r => r.length >= 3);
+      const headerRow = parsedLines[0].map(h => h.toLowerCase());
+      
+      const colIndex = {
+        date: headerRow.findIndex(h => h.includes("data")),
+        desc: headerRow.findIndex(h => h.includes("desc")),
+        val: headerRow.findIndex(h => h.includes("valor")),
+        type: headerRow.findIndex(h => h.includes("tipo")),
+        method: headerRow.findIndex(h => h.includes("metodo") || h.includes("método")),
+        cat: headerRow.findIndex(h => h.includes("categoria"))
+      };
 
-      if (rows.length === 0) {
-        toast.warning("Nenhuma linha válida encontrada no CSV. Verifique o separador.");
-        setIsImportOpen(false);
-        setCsvFile(null);
-        setCsvPreview([]);
+      if (colIndex.date === -1 || colIndex.desc === -1 || colIndex.val === -1) {
+        toast.error("Colunas obrigatórias não encontradas (Data, Descrição, Valor).");
         return;
       }
 
@@ -216,61 +250,163 @@ export default function RelatoriosPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      let success = 0;
-      let errors = 0;
+      setIsImporting(true);
+      setImportProgress(0);
+      setTotalRowsToImport(parsedLines.length - 1);
 
-      for (const row of rows) {
-        // Handle date conversion from DD/MM/YYYY to YYYY-MM-DD
-        let date = row[0] || new Date().toISOString().split("T")[0];
+      const results: typeof importResults = { success: 0, errors: 0, skipped: 0, details: [] };
+      const transactionsToInsert: any[] = [];
+      const newCategoryNames = new Set<string>();
+
+      // --- FASE 1: PRÉ-VALIDAÇÃO ---
+      for (let i = 1; i < parsedLines.length; i++) {
+        const row = parsedLines[i];
+        if (row.length < 2 || (row.length === 1 && !row[0])) continue;
+
+        let date = row[colIndex.date] || "";
+        const description = colIndex.desc !== -1 ? row[colIndex.desc] : "";
+        const valStr = colIndex.val !== -1 ? row[colIndex.val] : "";
+
+        // Validar campos básicos
+        if (!date || !description || !valStr) {
+          results.errors++;
+          results.details.push({ line: i + 1, description: description || "Linha vazia", status: "error", reason: "Campos obrigatórios ausentes" });
+          continue;
+        }
+
+        // Validar data
         if (date.includes("/")) {
           const parts = date.split("/");
           if (parts.length === 3) {
             date = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
           }
         }
+        if (isNaN(new Date(date).getTime())) {
+          results.errors++;
+          results.details.push({ line: i + 1, description, status: "error", reason: "Formato de data inválido" });
+          continue;
+        }
 
-        // Handle numeric format intelligently
-        let amountStr = row[2] || "0";
-        let amount = 0;
-
-        // Se houver vírgula e ponto (ex: 1.234,56)
+        // Validar valor
+        let amountStr = valStr;
         if (amountStr.includes(",") && amountStr.includes(".")) {
           amountStr = amountStr.replace(/\./g, "").replace(",", ".");
-        } 
-        // Se houver apenas vírgula (ex: 1234,56)
-        else if (amountStr.includes(",")) {
+        } else if (amountStr.includes(",")) {
           amountStr = amountStr.replace(",", ".");
         }
-        // Se houver apenas ponto, mas ele parece um separador de milhar (ex: 1.234)
-        // (Checamos se há 3 dígitos após o ponto no final da string)
-        else if (amountStr.includes(".") && amountStr.split(".")[1].length === 3 && !amountStr.includes(".")) {
-           // Caso raro, mas tratável
+        const amount = Math.abs(parseFloat(amountStr));
+        if (isNaN(amount)) {
+          results.errors++;
+          results.details.push({ line: i + 1, description, status: "error", reason: "Valor numérico inválido" });
+          continue;
         }
 
-        amount = Math.abs(parseFloat(amountStr)) || 0;
+        // Mapear Tipo e Método
+        const rawType = colIndex.type !== -1 ? (row[colIndex.type] || "expense").toLowerCase() : "expense";
+        let type: "income" | "expense" | "transfer" = "expense";
+        if (["receita", "entrada", "income"].includes(rawType)) type = "income";
+        else if (["despesa", "saída", "saida", "gasto", "expense"].includes(rawType)) type = "expense";
+        else if (["transferência", "transferencia", "transfer"].includes(rawType)) type = "transfer";
 
-        const tx = {
-          user_id: user.id,
-          description: row[1] || "Importado",
-          amount: amount,
-          date: date,
-          type: (row[3] || "expense").toLowerCase(),
-          status: "confirmed" as const,
-        };
+        const rawMethod = colIndex.method !== -1 ? (row[colIndex.method] || "").toLowerCase() : "";
+        let payment_method: "pix" | "ted" | "doc" | "cash" | null = null;
+        if (rawMethod === "pix") payment_method = "pix";
+        else if (rawMethod === "ted") payment_method = "ted";
+        else if (rawMethod === "doc") payment_method = "doc";
+        else if (["dinheiro", "espécie", "especie", "cash"].includes(rawMethod)) payment_method = "cash";
 
-        const { error } = await supabase.from("transactions").insert(tx);
-        if (error) {
-          console.error("Erro importando linha:", error);
-          errors++;
-        } else {
-          success++;
-        }
+        const catName = colIndex.cat !== -1 ? row[colIndex.cat]?.trim() : null;
+        if (catName) newCategoryNames.add(catName);
+
+        transactionsToInsert.push({ date, description, amount, type, payment_method, rawCategory: catName, line: i + 1 });
       }
 
-      toast.success(`Importação concluída: ${success} sucesso, ${errors} erro(s)`);
+      // Checar limite de erro na pré-validação (25%)
+      const totalRows = parsedLines.length - 1;
+      if (results.errors / totalRows > 0.25) {
+        toast.error(`Importação abortada: ${Math.round((results.errors / totalRows) * 100)}% das linhas possuem erros de formato.`);
+        setImportResults(results);
+        setIsResultsOpen(true);
+        setIsImporting(false);
+        return;
+      }
+
+      // --- FASE 2: EXECUÇÃO ---
+      const insertedIds: string[] = [];
+      const flatCats = allFlat();
+      const categoryMap = new Map(flatCats.map(c => [c.name.toLowerCase(), c.id]));
+      
+      // Criar categorias faltantes
+      for (const catName of Array.from(newCategoryNames)) {
+        if (!categoryMap.has(catName.toLowerCase())) {
+          const { data: newCat } = await supabase.from('categories').insert({ user_id: user.id, name: catName, type: 'expense' }).select('id').single();
+          if (newCat) categoryMap.set(catName.toLowerCase(), newCat.id);
+        }
+      }
+      refetchCategories();
+
+      for (let i = 0; i < transactionsToInsert.length; i++) {
+        const tx = transactionsToInsert[i];
+
+        // 3a. Deduplication check
+        const { data: existing } = await supabase.from("transactions").select("id").eq("user_id", user.id).eq("date", tx.date).eq("amount", tx.amount).eq("description", tx.description).maybeSingle();
+
+        if (existing) {
+          results.skipped++;
+          results.details.push({ line: tx.line, description: tx.description, status: "skip", reason: "Transação duplicada" });
+          setImportProgress(i + 1);
+          continue;
+        }
+
+        let invoiceId = null;
+        if (importTargetType === "credit_card" && importTargetId) {
+          const { data: invId } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _user_id: user.id, _transaction_date: tx.date });
+          invoiceId = invId;
+        }
+
+        const { data: inserted, error } = await supabase.from("transactions").insert({
+          user_id: user.id,
+          description: tx.description,
+          amount: tx.amount,
+          date: tx.date,
+          type: tx.type,
+          payment_method: tx.payment_method,
+          category_id: tx.rawCategory ? categoryMap.get(tx.rawCategory.toLowerCase()) : null,
+          account_id: importTargetType === "account" ? importTargetId : null,
+          credit_card_id: importTargetType === "credit_card" ? importTargetId : null,
+          invoice_id: invoiceId,
+          status: "confirmed"
+        }).select("id").single();
+
+        if (error) {
+          results.errors++;
+          results.details.push({ line: tx.line, description: tx.description, status: "error", reason: error.message });
+          
+          // Check for emergency rollback
+          if (results.errors / totalRows > 0.25) {
+            toast.error("Muitos erros detectados durante a inserção. Iniciando limpeza automática...");
+            if (insertedIds.length > 0) {
+              await supabase.from("transactions").delete().in("id", insertedIds);
+            }
+            results.details.push({ line: 0, description: "SISTEMA", status: "error", reason: "ROLLBACK EXECUTADO: Todas as inserções desta sessão foram removidas." });
+            setImportResults(results);
+            setIsResultsOpen(true);
+            setIsImporting(false);
+            return;
+          }
+        } else {
+          results.success++;
+          if (inserted) insertedIds.push(inserted.id);
+        }
+        setImportProgress(i + 1);
+      }
+
+      setImportResults(results);
+      setIsResultsOpen(true);
+      setIsImporting(false);
       setIsImportOpen(false);
       setCsvFile(null);
-      setCsvPreview([]);
+      setImportProgress(0);
       fetchReport();
     };
     reader.readAsText(csvFile);
@@ -397,17 +533,12 @@ export default function RelatoriosPage() {
                 <p className="text-muted-foreground">Baixe o formato aceito pelo sistema.</p>
               </div>
               <Button variant="outline" size="sm" onClick={() => {
-                const csvContent = "\uFEFFData,Descrição,Valor,Tipo,Método,Categoria,Conta,Conta Destino\n" +
-                  "2024-04-01,Salário Mensal,5500.00,income,,Salário,NuConta,\n" +
-                  "2024-04-02,Aluguel Apartamento,1200.00,expense,,Moradia,Inter,\n" +
-                  "2024-04-03,Transferência Pix para Reserva,50.00,transfer,pix,,NuConta,Inter\n" +
-                  "2024-04-04,Saque para Carteira,100.00,transfer,cash,,NuConta,Carteira\n" +
-                  "2024-04-05,Supermercado Mensal,350.50,expense,,Alimentação,Inter,\n" +
-                  "2024-04-06,TED entre contas,200.00,transfer,ted,,Inter,NuConta\n" +
-                  "2024-04-07,Freelance Design,800.00,income,,Freelance,NuConta,\n" +
-                  "2024-04-08,DOC para Poupança,150.00,transfer,doc,,NuConta,Inter\n" +
-                  "2024-04-09,Jantar no Restaurante,80.00,expense,,Lazer,Inter,\n" +
-                  "2024-04-10,Venda de Item Usado,120.00,income,pix,Outros,NuConta,";
+                const csvContent = "\uFEFFData,Descrição,Valor,Tipo,Método,Categoria\n" +
+                  "2026-03-01,Salário Empresa,5500.00,income,pix,Salário\n" +
+                  "2026-03-05,Aluguel,1200.00,expense,ted,Moradia\n" +
+                  "2026-03-10,Mercado Central,350.50,expense,pix,Alimentação\n" +
+                  "2026-03-15,Jantar,80.00,expense,pix,Lazer\n" +
+                  "2026-03-20,Venda de Item,120.00,income,cash,Outros";
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement("a");
                 link.href = URL.createObjectURL(blob);
@@ -420,28 +551,158 @@ export default function RelatoriosPage() {
               </Button>
             </div>
             <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-              <p className="font-medium">Formato esperado:</p>
-              <p>descrição, valor, data (YYYY-MM-DD), tipo (income/expense)</p>
+              <p className="font-medium">Formato esperado (Campos OBRIGATÓRIOS):</p>
+              <p>Data, Descrição, Valor. (Opcionais: Tipo, Método, Categoria)</p>
             </div>
-            <Input type="file" accept=".csv" onChange={handleCsvUpload} />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Vincular à:</Label>
+                <Select value={importTargetType} onValueChange={(v) => { setImportTargetType(v as any); setImportTargetId(""); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tipo">
+                      {importTargetType === "account" ? "Conta Bancária" : importTargetType === "credit_card" ? "Cartão de Crédito" : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="account">Conta Bancária</SelectItem>
+                    <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Destino:</Label>
+                <Select value={importTargetId} onValueChange={(v) => setImportTargetId(v || "")} disabled={!importTargetType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o destino">
+                      {importTargetId ? (
+                        importTargetType === "account" 
+                          ? accounts.find(a => a.id === importTargetId)?.name 
+                          : creditCards.find(c => c.id === importTargetId)?.name
+                      ) : undefined}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {importTargetType === 'account' && accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                    {importTargetType === 'credit_card' && creditCards.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Arquivo CSV:</Label>
+              <Input type="file" accept=".csv" onChange={handleCsvUpload} />
+            </div>
+
             {csvPreview.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <tbody>
-                    {csvPreview.map((row, i) => (
-                      <tr key={i} className={i === 0 ? "font-bold bg-muted" : ""}>
-                        {row.map((cell, j) => <td key={j} className="p-1 border border-border">{cell}</td>)}
-                      </tr>
+              <div className="border rounded overflow-hidden">
+                <Table>
+                  <TableBody>
+                    {csvPreview.slice(0, 4).map((row, i) => (
+                      <TableRow key={i} className={i === 0 ? "bg-muted font-bold" : ""}>
+                        {row.map((cell, j) => <TableCell key={j} className="p-2 text-[10px] truncate max-w-[100px]">{cell}</TableCell>)}
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setIsImportOpen(false)}>Cancelar</Button>
-              <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={importCsv} disabled={!csvFile}>Importar</Button>
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="ghost" className="flex-1" onClick={() => setIsImportOpen(false)}>Cancelar</Button>
+              <Button 
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" 
+                onClick={importCsv} 
+                disabled={!csvFile || !importTargetId}
+              >
+                Iniciar Importação
+              </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Progress Dialog */}
+      <Dialog open={isImporting} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Processando Importação</DialogTitle></DialogHeader>
+          <div className="py-6 space-y-4 text-center">
+             <div className="flex justify-between text-sm mb-2">
+                <span className="text-muted-foreground">Analizando e enviando...</span>
+                <span className="font-bold">{importProgress} / {totalRowsToImport}</span>
+             </div>
+             <Progress value={(importProgress / (totalRowsToImport || 1)) * 100} className="h-3" />
+             <p className="text-xs text-muted-foreground italic">
+                Aguarde, não atualize a página até o fim.
+             </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Results Report Dialog */}
+      <Dialog open={isResultsOpen} onOpenChange={setIsResultsOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-emerald-500" />
+              Resultado da Importação
+            </DialogTitle>
+          </DialogHeader>
+
+          {importResults && (
+            <div className="flex-1 overflow-hidden flex flex-col gap-6 py-2">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl text-center">
+                  <p className="text-[10px] text-emerald-600 font-black uppercase mb-1">Sucesso</p>
+                  <p className="text-2xl font-black text-emerald-700">{importResults.success}</p>
+                </div>
+                <div className="bg-amber-50 border border-amber-100 p-3 rounded-xl text-center">
+                  <p className="text-[10px] text-amber-600 font-black uppercase mb-1">Pulados</p>
+                  <p className="text-2xl font-black text-amber-700">{importResults.skipped}</p>
+                </div>
+                <div className="bg-red-50 border border-red-100 p-3 rounded-xl text-center">
+                  <p className="text-[10px] text-red-600 font-black uppercase mb-1">Erros</p>
+                  <p className="text-2xl font-black text-red-700">{importResults.errors}</p>
+                </div>
+              </div>
+
+              <div className="flex-1 flex flex-col min-h-0 border rounded-lg">
+                <ScrollArea className="h-full">
+                  <Table>
+                    <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                      <TableRow>
+                        <TableHead className="w-16">Linha</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Motivo</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {importResults.details.map((detail, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="font-mono text-[10px]">{detail.line || "-"}</TableCell>
+                          <TableCell className="max-w-[150px] truncate text-[10px] font-medium">{detail.description}</TableCell>
+                          <TableCell>
+                            {detail.status === "error" ? (
+                              <Badge variant="destructive" className="text-[9px] h-5 px-1.5 py-0">Erro</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] h-5 px-1.5 py-0 text-amber-600 border-amber-200 bg-amber-50">Pulado</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-[10px] text-muted-foreground">{detail.reason}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+
+              <Button onClick={() => setIsResultsOpen(false)} className="w-full bg-emerald-600 hover:bg-emerald-700 py-6 font-bold shadow-lg shadow-emerald-200">
+                Fechar Relatório
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

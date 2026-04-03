@@ -322,6 +322,78 @@ END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- ============================================================
+-- Funções de Datas e Feriados Brasileiros
+-- ============================================================
+
+-- Algoritmo de Meeus/Jones/Butcher para calcular a Páscoa
+CREATE OR REPLACE FUNCTION public.calculate_easter(_year INT)
+RETURNS DATE AS $$
+DECLARE
+    a INT; b INT; c INT; d INT; e INT; f INT; g INT; h INT; i INT; k INT; L INT; m INT;
+    month INT; day INT;
+BEGIN
+    a := _year % 19;
+    b := _year / 100;
+    c := _year % 100;
+    d := b / 4;
+    e := b % 4;
+    f := (b + 8) / 25;
+    g := (b - f + 1) / 3;
+    h := (19 * a + b - d - g + 15) % 30;
+    i := c / 4;
+    k := c % 4;
+    L := (32 + 2 * e + 2 * i - h - k) % 7;
+    m := (a + 11 * h + 22 * L) / 451;
+    month := (h + L - 7 * m + 114) / 31;
+    day := ((h + L - 7 * m + 114) % 31) + 1;
+    RETURN make_date(_year, month, day);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Verifica se a data é feriado nacional brasileiro
+CREATE OR REPLACE FUNCTION public.is_brazilian_holiday(_check_date DATE)
+RETURNS BOOLEAN AS $$
+DECLARE
+    _easter DATE := public.calculate_easter(EXTRACT(YEAR FROM _check_date)::INT);
+    _day_month TEXT := TO_CHAR(_check_date, 'DD/MM');
+BEGIN
+    -- Feriados Fixos
+    IF _day_month IN (
+        '01/01', -- Ano Novo
+        '21/04', -- Tiradentes
+        '01/05', -- Dia do Trabalho
+        '07/09', -- Independência
+        '12/10', -- Nossa Sra Aparecida
+        '02/11', -- Finados
+        '15/11', -- Proclamação da República
+        '20/11', -- Consciência Negra (Nacional desde 2024)
+        '25/12'  -- Natal
+    ) THEN RETURN TRUE; END IF;
+
+    -- Feriados Móveis (Baseados na Páscoa)
+    IF _check_date = (_easter - INTERVAL '47 days')::DATE THEN RETURN TRUE; END IF; -- Carnaval (Terça)
+    IF _check_date = (_easter - INTERVAL '48 days')::DATE THEN RETURN TRUE; END IF; -- Carnaval (Segunda)
+    IF _check_date = (_easter - INTERVAL '2 days')::DATE THEN RETURN TRUE; END IF;  -- Sexta Santa
+    IF _check_date = (_easter + INTERVAL '60 days')::DATE THEN RETURN TRUE; END IF; -- Corpus Christi
+
+    RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Retorna o próximo dia útil (Pula FDS e Feriados)
+CREATE OR REPLACE FUNCTION public.get_next_business_day(_target_date DATE)
+RETURNS DATE AS $$
+DECLARE
+    _current DATE := _target_date;
+BEGIN
+    WHILE EXTRACT(ISODOW FROM _current) > 5 OR public.is_brazilian_holiday(_current) LOOP
+        _current := _current + INTERVAL '1 day';
+    END LOOP;
+    RETURN _current;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
 -- RPC: Obter ou criar fatura para um cartão de crédito
 -- Dado um cartão e uma data de compra, retorna o invoice_id
 -- da fatura correspondente (cria se não existir)
@@ -352,21 +424,42 @@ BEGIN
     RAISE EXCEPTION 'Cartão de crédito não pertence ao usuário ou não existe';
   END IF;
 
-  -- Determinar o mês de referência da fatura
-  -- Se a compra é DEPOIS do fechamento, vai para a fatura do mês seguinte
-  IF EXTRACT(DAY FROM _transaction_date) > _closing_day THEN
-    _ref_month := DATE_TRUNC('month', _transaction_date) + INTERVAL '1 month';
+  -- Determinar o mês de referência da fatura (Mês do Vencimento)
+  IF _due_day < _closing_day THEN
+    -- Ex: Fecha 24, Vence 01
+    IF EXTRACT(DAY FROM _transaction_date) <= _closing_day THEN
+      _ref_month := DATE_TRUNC('month', _transaction_date) + INTERVAL '1 month';
+    ELSE
+      _ref_month := DATE_TRUNC('month', _transaction_date) + INTERVAL '2 months';
+    END IF;
   ELSE
-    _ref_month := DATE_TRUNC('month', _transaction_date);
+    -- Ex: Fecha 05, Vence 15
+    IF EXTRACT(DAY FROM _transaction_date) <= _closing_day THEN
+      _ref_month := DATE_TRUNC('month', _transaction_date);
+    ELSE
+      _ref_month := DATE_TRUNC('month', _transaction_date) + INTERVAL '1 month';
+    END IF;
   END IF;
 
-  -- Calcular data de fechamento (closing_day do mês anterior ao ref_month)
-  _closing_date := (_ref_month - INTERVAL '1 month') +
-    (LEAST(_closing_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month - INTERVAL '1 month') + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+  -- Calcular data de fechamento (Sempre no mês anterior ao ref_month se due_day < closing_day)
+  IF _due_day < _closing_day THEN
+     _closing_date := (_ref_month - INTERVAL '1 month') +
+       (LEAST(_closing_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month - INTERVAL '1 month') + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+  ELSE
+     -- Se due_day >= closing_day, o fechamento é no mesmo mês do vencimento
+     _closing_date := DATE_TRUNC('month', _ref_month) +
+       (LEAST(_closing_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month) + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+  END IF;
 
-  -- Calcular data de vencimento (due_day do mês de referência)
+  -- Aplicar ajuste de dia útil ao fechamento
+  _closing_date := public.get_next_business_day(_closing_date);
+
+  -- Calcular data de vencimento (Sempre no mês de referência)
   _due_date := _ref_month +
     (LEAST(_due_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month) + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+
+  -- Aplicar ajuste de dia útil ao vencimento
+  _due_date := public.get_next_business_day(_due_date);
 
   -- Tentar encontrar fatura existente
   SELECT id INTO _invoice_id
