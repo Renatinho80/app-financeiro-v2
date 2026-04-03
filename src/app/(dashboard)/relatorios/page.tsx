@@ -346,7 +346,26 @@ export default function RelatoriosPage() {
                 <p className="font-medium">Precisa do modelo?</p>
                 <p className="text-muted-foreground">Baixe o formato aceito pelo sistema.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => window.open("/modelo_transacoes.csv")}>
+              <Button variant="outline" size="sm" onClick={() => {
+                const csvContent = "\uFEFFData,Descrição,Valor,Tipo,Método,Categoria,Conta,Conta Destino\n" +
+                  "2024-04-01,Salário Mensal,5500.00,income,,Salário,NuConta,\n" +
+                  "2024-04-02,Aluguel Apartamento,1200.00,expense,,Moradia,Inter,\n" +
+                  "2024-04-03,Transferência Pix para Reserva,50.00,transfer,pix,,NuConta,Inter\n" +
+                  "2024-04-04,Saque para Carteira,100.00,transfer,cash,,NuConta,Carteira\n" +
+                  "2024-04-05,Supermercado Mensal,350.50,expense,,Alimentação,Inter,\n" +
+                  "2024-04-06,TED entre contas,200.00,transfer,ted,,Inter,NuConta\n" +
+                  "2024-04-07,Freelance Design,800.00,income,,Freelance,NuConta,\n" +
+                  "2024-04-08,DOC para Poupança,150.00,transfer,doc,,NuConta,Inter\n" +
+                  "2024-04-09,Jantar no Restaurante,80.00,expense,,Lazer,Inter,\n" +
+                  "2024-04-10,Venda de Item Usado,120.00,income,pix,Outros,NuConta,";
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.setAttribute("download", "modelo_transacoes.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}>
                 Baixar CSV
               </Button>
             </div>

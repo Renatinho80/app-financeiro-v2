@@ -228,12 +228,12 @@ export default function DashboardPage() {
         <Card className={`border-${currentInsight.color}-500/30 bg-gradient-to-r from-${currentInsight.color}-500/10 to-transparent relative overflow-hidden`}>
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl" />
           <CardContent className="p-4 sm:p-6 flex items-start sm:items-center gap-4">
-            <div className={`p-3 rounded-xl bg-${currentInsight.color}-500/20 text-${currentInsight.color}-600 shrink-0`}>
+            <div className={`p-3 rounded-xl bg-${currentInsight.color}-500/20 text-${currentInsight.color}-500 shrink-0`}>
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
               <h3 className="font-semibold flex items-center gap-2">
-                Inteligência App <Badge variant="secondary" className="scale-75 origin-left bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/20">Novo</Badge>
+                Inteligência App <Badge variant="secondary" className="scale-75 origin-left bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">Novo</Badge>
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
                 <strong>{currentInsight.title}:</strong> {currentInsight.desc}
@@ -333,10 +333,30 @@ export default function DashboardPage() {
             {monthlyData.length > 0 ? (
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="month" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `R$ ${(v/1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.4} />
+                  <XAxis 
+                    dataKey="month" 
+                    className="text-xs" 
+                    tick={{ fill: "var(--muted-foreground)" }} 
+                    axisLine={{ stroke: "var(--border)" }}
+                    tickLine={{ stroke: "var(--border)" }}
+                  />
+                  <YAxis 
+                    tick={{ fill: "var(--muted-foreground)" }} 
+                    tickFormatter={v => `R$ ${(v/1000).toFixed(0)}k`} 
+                    axisLine={{ stroke: "var(--border)" }}
+                    tickLine={{ stroke: "var(--border)" }}
+                  />
+                  <Tooltip 
+                    formatter={(value) => formatCurrency(Number(value))} 
+                    contentStyle={{ 
+                      backgroundColor: "var(--card)", 
+                      border: "1px solid var(--border)", 
+                      borderRadius: "8px",
+                      color: "var(--foreground)"
+                    }}
+                    itemStyle={{ color: "var(--foreground)" }}
+                  />
                   <Bar dataKey="income" name="Receitas" fill="#22c55e" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="expenses" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -360,10 +380,30 @@ export default function DashboardPage() {
                       <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="month" className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `R$ ${(v/1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.4} />
+                  <XAxis 
+                    dataKey="month" 
+                    className="text-xs" 
+                    tick={{ fill: "var(--muted-foreground)" }} 
+                    axisLine={{ stroke: "var(--border)" }}
+                    tickLine={{ stroke: "var(--border)" }}
+                  />
+                  <YAxis 
+                    tick={{ fill: "var(--muted-foreground)" }} 
+                    tickFormatter={v => `R$ ${(v/1000).toFixed(0)}k`}
+                    axisLine={{ stroke: "var(--border)" }}
+                    tickLine={{ stroke: "var(--border)" }}
+                  />
+                  <Tooltip 
+                    formatter={(value) => formatCurrency(Number(value))} 
+                    contentStyle={{ 
+                      backgroundColor: "var(--card)", 
+                      border: "1px solid var(--border)", 
+                      borderRadius: "8px",
+                      color: "var(--foreground)"
+                    }}
+                    itemStyle={{ color: "var(--foreground)" }}
+                  />
                   <Area type="monotone" dataKey="balance" name="Saldo" stroke="#22c55e" fill="url(#balanceGradient)" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -385,7 +425,16 @@ export default function DashboardPage() {
                   <Pie data={categoryExpenses} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
                     {categoryExpenses.map((entry, i) => <Cell key={i} fill={entry.color || CHART_COLORS[i % CHART_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px" }} />
+                  <Tooltip 
+                    formatter={(value) => formatCurrency(Number(value))} 
+                    contentStyle={{ 
+                      backgroundColor: "var(--card)", 
+                      border: "1px solid var(--border)", 
+                      borderRadius: "8px",
+                      color: "var(--foreground)"
+                    }}
+                    itemStyle={{ color: "var(--foreground)" }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="flex-1 space-y-2 max-h-[250px] overflow-y-auto w-full">
