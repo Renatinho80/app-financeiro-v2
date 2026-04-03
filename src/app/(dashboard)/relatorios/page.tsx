@@ -191,9 +191,26 @@ export default function RelatoriosPage() {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const text = ev.target?.result as string;
-      const lines = text.split("\n").map(l => l.split(",").map(c => c.trim()));
-      const headers = lines[0];
-      const rows = lines.slice(1).filter(r => r.length >= 3);
+      const lines = text.split("\n").filter(l => l.trim() !== "");
+      if (lines.length === 0) return;
+
+      // Robust separator detection
+      const delimiters = [",", ";", "\t", "|"];
+      const header = lines[0];
+      const separator = delimiters.reduce((prev, curr) => {
+        return (header.split(curr).length > header.split(prev).length) ? curr : prev;
+      });
+      
+      const parsedLines = lines.map(l => l.split(separator).map(c => c.trim()));
+      const rows = parsedLines.slice(1).filter(r => r.length >= 3);
+
+      if (rows.length === 0) {
+        toast.warning("Nenhuma linha válida encontrada no CSV. Verifique o separador.");
+        setIsImportOpen(false);
+        setCsvFile(null);
+        setCsvPreview([]);
+        return;
+      }
 
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -203,18 +220,36 @@ export default function RelatoriosPage() {
       let errors = 0;
 
       for (const row of rows) {
+        // Handle date conversion from DD/MM/YYYY to YYYY-MM-DD
+        let date = row[0] || new Date().toISOString().split("T")[0];
+        if (date.includes("/")) {
+          const parts = date.split("/");
+          if (parts.length === 3) {
+            date = `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+          }
+        }
+
+        // Handle numeric format (convert 1.234,56 or 1234,56 to 1234.56)
+        let amountStr = row[2] || "0";
+        amountStr = amountStr.replace(/\./g, "").replace(",", ".");
+        const amount = Math.abs(parseFloat(amountStr)) || 0;
+
         const tx = {
           user_id: user.id,
-          description: row[0] || "Importado",
-          amount: parseFloat(row[1]) || 0,
-          date: row[2] || new Date().toISOString().split("T")[0],
+          description: row[1] || "Importado",
+          amount: amount,
+          date: date,
           type: (row[3] || "expense").toLowerCase(),
           status: "confirmed" as const,
         };
 
         const { error } = await supabase.from("transactions").insert(tx);
-        if (error) errors++;
-        else success++;
+        if (error) {
+          console.error("Erro importando linha:", error);
+          errors++;
+        } else {
+          success++;
+        }
       }
 
       toast.success(`Importação concluída: ${success} sucesso, ${errors} erro(s)`);
