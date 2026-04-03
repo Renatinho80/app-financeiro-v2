@@ -216,22 +216,28 @@ export default function FaturasPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Marcar fatura como paga?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação registrará o pagamento e debitará o valor da conta selecionada.
+              {selectedAccountId
+                ? "O valor será debitado da conta selecionada."
+                : "Sem conta selecionada, a fatura será marcada como paga sem movimentar saldo."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          
+
           <div className="py-4 space-y-4">
             <div className="space-y-2">
-              <Label>Selecionar Conta para Débito</Label>
-              <Select value={selectedAccountId} onValueChange={(val) => setSelectedAccountId(val || undefined)}>
+              <Label>
+                Conta para Débito{" "}
+                <span className="text-muted-foreground font-normal text-xs">(opcional)</span>
+              </Label>
+              <Select value={selectedAccountId ?? ""} onValueChange={(val) => setSelectedAccountId(val || undefined)}>
                 <SelectTrigger>
                   <span data-slot="select-value">
-                    {selectedAccountId 
-                      ? accounts.find(a => a.id === selectedAccountId)?.name 
-                      : "Selecione a conta"}
+                    {selectedAccountId
+                      ? accounts.find(a => a.id === selectedAccountId)?.name
+                      : "Nenhuma — registrar apenas o pagamento"}
                   </span>
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="">Nenhuma — registrar apenas o pagamento</SelectItem>
                   {accounts.filter(a => a.is_active).map(acc => (
                     <SelectItem key={acc.id} value={acc.id}>
                       {acc.name} (Saldo: {formatCurrency(acc.balance)})
@@ -244,15 +250,14 @@ export default function FaturasPage() {
 
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction 
-              disabled={!selectedAccountId}
-              onClick={async () => { 
-                if (payingId && selectedAccountId) { 
-                  await markAsPaid(payingId, selectedAccountId); 
-                  setPayingId(null); 
+            <AlertDialogAction
+              onClick={async () => {
+                if (payingId) {
+                  await markAsPaid(payingId, selectedAccountId ?? null);
+                  setPayingId(null);
                   setSelectedAccountId(undefined);
-                } 
-              }} 
+                }
+              }}
               className="bg-emerald-600 text-white hover:bg-emerald-700"
             >
               Confirmar Pagamento

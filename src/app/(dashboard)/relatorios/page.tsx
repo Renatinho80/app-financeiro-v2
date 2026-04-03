@@ -2,7 +2,7 @@
 
 import packageInfo from "../../../../package.json";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
-import { FileDown, FileSpreadsheet, Upload, BarChart3, ChevronDown } from "lucide-react";
+import { FileDown, FileSpreadsheet, Upload, BarChart3, ChevronDown, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -57,6 +57,13 @@ export default function RelatoriosPage() {
   } | null>(null);
   const [isResultsOpen, setIsResultsOpen] = useState(false);
 
+  // Paginação e ordenação do extrato
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [sortField, setSortField] = useState<"date" | "description" | "amount">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
   // Import states
   const { accounts } = useAccounts();
   const { creditCards } = useCreditCards();
@@ -80,6 +87,8 @@ export default function RelatoriosPage() {
       toast.error("Erro ao carregar relatório");
     } else {
       setTransactions((data as Transaction[]) || []);
+      setCurrentPage(1);
+      setPageInput("1");
       if (data && data.length === REPORT_LIMIT) {
         toast.warning("Relatório limitado a 5.000 transações. Reduza o intervalo de datas para ver todos os dados.");
       }
@@ -91,6 +100,30 @@ export default function RelatoriosPage() {
 
   const totalIncome = transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const totalExpenses = transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+
+  const sortedTransactions = useMemo(() => {
+    return [...transactions].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === "date") cmp = a.date.localeCompare(b.date);
+      else if (sortField === "description") cmp = a.description.localeCompare(b.description, "pt-BR");
+      else if (sortField === "amount") cmp = Number(a.amount) - Number(b.amount);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [transactions, sortField, sortDir]);
+
+  const totalReportPages = Math.max(1, Math.ceil(sortedTransactions.length / pageSize));
+  const paginatedTransactions = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const goToPage = (p: number) => {
+    const clamped = Math.max(1, Math.min(p, totalReportPages));
+    setCurrentPage(clamped);
+    setPageInput(String(clamped));
+  };
+
+  const toggleSort = (field: typeof sortField) => {
+    if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortField(field); setSortDir("asc"); }
+  };
 
   // Category summary
   const catSummary = new Map<string, { name: string; total: number }>();
@@ -457,7 +490,7 @@ export default function RelatoriosPage() {
 
         let invoiceId = null;
         if (importTargetType === "credit_card" && importTargetId) {
-          const { data: invId } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _transaction_date: tx.date });
+          const { data: invId } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _transaction_date: tx.date, _ignore_closed: true });
           invoiceId = invId;
         }
 
@@ -619,7 +652,7 @@ export default function RelatoriosPage() {
           <TabsTrigger value="categories">Por Categoria</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="extract" className="mt-4">
+        <TabsContent value="extract" className="mt-4 space-y-3">
           {loading ? (
             <div className="space-y-2">{[1,2,3,4,5].map(i => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>
           ) : transactions.length === 0 ? (
@@ -630,19 +663,91 @@ export default function RelatoriosPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-1">
-              {transactions.map(tx => (
-                <div key={tx.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 text-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="text-muted-foreground w-20">{formatDate(tx.date)}</span>
-                    <span>{tx.description}</span>
-                  </div>
-                  <span className={tx.type === "income" ? "text-emerald-500" : "text-red-500"}>
-                    {tx.type === "income" ? "+" : "-"}{formatCurrency(Number(tx.amount))}
-                  </span>
+            <>
+              {/* Toolbar: ordenação + linhas por página */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <ArrowUpDown className="w-3.5 h-3.5 mr-1" />
+                  {(["date", "description", "amount"] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => toggleSort(f)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md border transition-colors",
+                        sortField === f
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 font-medium"
+                          : "border-transparent hover:bg-muted"
+                      )}
+                    >
+                      {f === "date" ? "Data" : f === "description" ? "Descrição" : "Valor"}
+                      {sortField === f && (sortDir === "asc" ? " ↑" : " ↓")}
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Linhas:</span>
+                  {[5, 10, 20, 40].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => { setPageSize(n); goToPage(1); }}
+                      className={cn(
+                        "px-2 py-1 rounded-md border transition-colors",
+                        pageSize === n
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 font-medium"
+                          : "border-transparent hover:bg-muted"
+                      )}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lista paginada */}
+              <div className="space-y-1">
+                {paginatedTransactions.map(tx => (
+                  <div key={tx.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 text-sm">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-muted-foreground w-20 shrink-0">{formatDate(tx.date)}</span>
+                      <span className="truncate">{tx.description}</span>
+                    </div>
+                    <span className={cn("shrink-0 ml-2", tx.type === "income" ? "text-emerald-500" : "text-red-500")}>
+                      {tx.type === "income" ? "+" : "-"}{formatCurrency(Number(tx.amount))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Controles de paginação */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border text-xs text-muted-foreground">
+                <span>{transactions.length} transação(ões) · página {currentPage} de {totalReportPages}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => goToPage(1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed">
+                    <ChevronsLeft className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <form onSubmit={e => { e.preventDefault(); goToPage(Number(pageInput)); }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalReportPages}
+                      value={pageInput}
+                      onChange={e => setPageInput(e.target.value)}
+                      onBlur={() => goToPage(Number(pageInput))}
+                      className="w-12 text-center border border-border rounded-md px-1 py-0.5 bg-background text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  </form>
+                  <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalReportPages} className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => goToPage(totalReportPages)} disabled={currentPage === totalReportPages} className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed">
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </TabsContent>
 

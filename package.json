@@ -1,6 +1,6 @@
 {
   "name": "app-financeiro-v2",
-  "version": "1.9.4",
+  "version": "1.10.2",
   "private": true,
   "scripts": {
     "dev": "next dev",

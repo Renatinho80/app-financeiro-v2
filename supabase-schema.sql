@@ -368,7 +368,8 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.get_or_create_invoice(
   _credit_card_id UUID,
-  _transaction_date DATE
+  _transaction_date DATE,
+  _ignore_closed BOOLEAN DEFAULT FALSE
 )
 RETURNS UUID AS $$
 DECLARE
@@ -439,8 +440,8 @@ BEGIN
       AND reference_month = _ref_month
     LIMIT 1;
 
-    -- Se encontrou mas não está aberta, bloquear
-    IF _invoice_id IS NOT NULL AND _status != 'open' THEN
+    -- Se encontrou mas não está aberta: bloquear (exceto em imports históricos)
+    IF _invoice_id IS NOT NULL AND _status != 'open' AND NOT _ignore_closed THEN
       RAISE EXCEPTION 'A fatura selecionada está % e não permite novos lançamentos. Reabra-a na tela de faturas para continuar.', _status;
     END IF;
 

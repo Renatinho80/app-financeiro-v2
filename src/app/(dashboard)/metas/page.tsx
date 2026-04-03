@@ -17,6 +17,18 @@ import type { Goal } from "@/hooks/use-goals";
 
 const goalIcons = ["🎯", "🏖️", "🚗", "🏠", "💻", "💍", "🎓", "👶", "💰", "✈️"];
 
+const maskCurrency = (raw: string): string => {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  return (parseInt(digits, 10) / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const parseCurrency = (masked: string): number =>
+  parseFloat(masked.replace(/\./g, "").replace(",", ".")) || 0;
+
 export default function MetasPage() {
   const { goals, loading, createGoal, updateGoal, deleteGoal } = useGoals();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -44,8 +56,8 @@ export default function MetasPage() {
   const openEdit = (g: Goal) => {
     setEditing(g);
     setFormName(g.name);
-    setFormTarget(g.target_amount.toString());
-    setFormCurrent(g.current_amount.toString());
+    setFormTarget(g.target_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setFormCurrent((g.current_amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     setFormDeadline(g.deadline || "");
     setFormColor(g.color || ACCOUNT_COLORS[0]);
     setFormIcon(g.icon || goalIcons[0]);
@@ -56,8 +68,8 @@ export default function MetasPage() {
     e.preventDefault();
     const data = {
       name: formName,
-      target_amount: Number(formTarget),
-      current_amount: Number(formCurrent) || 0,
+      target_amount: parseCurrency(formTarget),
+      current_amount: parseCurrency(formCurrent),
       deadline: formDeadline || null,
       color: formColor,
       icon: formIcon
@@ -195,11 +207,17 @@ export default function MetasPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Valor Total (R$)</Label>
-                <Input required type="number" step="0.01" min="1" value={formTarget} onChange={e => setFormTarget(e.target.value)} placeholder="0,00" />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
+                  <Input required type="text" inputMode="numeric" value={formTarget} onChange={e => setFormTarget(maskCurrency(e.target.value))} placeholder="0,00" className="pl-9" />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Valor Atual Poupado</Label>
-                <Input type="number" step="0.01" min="0" value={formCurrent} onChange={e => setFormCurrent(e.target.value)} placeholder="0,00" />
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
+                  <Input type="text" inputMode="numeric" value={formCurrent} onChange={e => setFormCurrent(maskCurrency(e.target.value))} placeholder="0,00" className="pl-9" />
+                </div>
               </div>
             </div>
 

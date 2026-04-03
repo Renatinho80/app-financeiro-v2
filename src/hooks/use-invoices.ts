@@ -32,10 +32,10 @@ export function useInvoices(creditCardId?: string) {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
-  const markAsPaid = async (id: string, accountId: string) => {
+  const markAsPaid = async (id: string, accountId: string | null) => {
     const supabase = createClient();
-    
-    // 1. Buscar dados da fatura para a transação
+
+    // 1. Buscar dados da fatura
     const { data: invoice } = await supabase
       .from("invoices")
       .select("total_amount, reference_month, credit_card:credit_cards(name)")
@@ -47,23 +47,29 @@ export function useInvoices(creditCardId?: string) {
       return false;
     }
 
-    const cardName = (invoice.credit_card as any)?.name || "Cartão";
-    const refMonth = new Date(invoice.reference_month).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    let newTxId: string | null = null;
 
-    // 2. Criar transação de pagamento (débito da conta)
-    const { data: newTx, error: txError } = await supabase.from("transactions").insert({
-      description: `Pagamento Fatura ${cardName} - ${refMonth}`,
-      amount: invoice.total_amount,
-      type: "expense", // Usamos expense para debitar o saldo via trigger
-      date: new Date().toISOString().split("T")[0],
-      account_id: accountId,
-      status: "confirmed",
-      user_id: (await supabase.auth.getUser()).data.user?.id
-    }).select("id").single();
+    // 2. Criar transação de débito apenas se uma conta foi informada
+    if (accountId) {
+      const cardName = (invoice.credit_card as any)?.name || "Cartão";
+      const refMonth = new Date(invoice.reference_month).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 
-    if (txError) {
-      toast.error("Erro ao criar transação de pagamento", { description: txError.message });
-      return false;
+      const { data: newTx, error: txError } = await supabase.from("transactions").insert({
+        description: `Pagamento Fatura ${cardName} - ${refMonth}`,
+        amount: invoice.total_amount,
+        type: "expense",
+        date: new Date().toISOString().split("T")[0],
+        account_id: accountId,
+        status: "confirmed",
+        user_id: (await supabase.auth.getUser()).data.user?.id,
+      }).select("id").single();
+
+      if (txError) {
+        toast.error("Erro ao criar transação de pagamento", { description: txError.message });
+        return false;
+      }
+
+      newTxId = newTx?.id ?? null;
     }
 
     // 3. Atualizar status da fatura
@@ -73,15 +79,14 @@ export function useInvoices(creditCardId?: string) {
       .eq("id", id);
 
     if (error) {
-      // Rollback: desfaz o débito para manter consistência
-      if (newTx?.id) {
-        await supabase.from("transactions").delete().eq("id", newTx.id);
+      if (newTxId) {
+        await supabase.from("transactions").delete().eq("id", newTxId);
       }
       toast.error("Erro ao marcar fatura como paga. Débito revertido.", { description: error.message });
       return false;
     }
 
-    toast.success("Fatura paga e saldo atualizado!");
+    toast.success(accountId ? "Fatura paga e saldo atualizado!" : "Fatura marcada como paga!");
     await fetchInvoices();
     return true;
   };
