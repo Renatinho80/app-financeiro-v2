@@ -6,10 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatDate, formatShortMonth, formatMonthYear } from "@/lib/utils/format";
+import { formatCurrency, formatDate, formatShortMonth } from "@/lib/utils/format";
 import { CHART_COLORS } from "@/lib/utils/constants";
-import { TrendingUp, TrendingDown, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, CreditCard, AlertTriangle, Sparkles } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Area, AreaChart } from "recharts";
+import { TrendingUp, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, CreditCard, AlertTriangle, Sparkles } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, parseISO } from "date-fns";
 import Link from "next/link";
 
@@ -24,7 +24,7 @@ type UpcomingInvoice = {
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), "yyyy-MM"));
-  const [summary, setSummary] = useState({ totalBalance: 0, monthIncome: 0, monthExpenses: 0, monthBalance: 0 });
+  const [summary, setSummary] = useState({ totalBalance: 0, totalAccounts: 0, totalInvoicesDebt: 0, monthIncome: 0, monthExpenses: 0, monthBalance: 0 });
   const [categoryExpenses, setCategoryExpenses] = useState<{ name: string; value: number; color: string }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expenses: number; balance: number }[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<{ id: string; description: string; amount: number; type: string; date: string }[]>([]);
@@ -34,106 +34,114 @@ export default function DashboardPage() {
     const fetchData = async () => {
       setLoading(true);
       const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const [year, month] = selectedMonth.split("-").map(Number);
-      const start = format(startOfMonth(new Date(year, month - 1)), "yyyy-MM-dd");
-      const end = format(endOfMonth(new Date(year, month - 1)), "yyyy-MM-dd");
+      const selectedDate = new Date(year, month - 1);
+      const start = format(startOfMonth(selectedDate), "yyyy-MM-dd");
+      const end = format(endOfMonth(selectedDate), "yyyy-MM-dd");
 
-      // Total balance
-      const { data: accounts } = await supabase.from("accounts").select("balance").eq("is_active", true);
-      const totalBalance = (accounts || []).reduce((sum: number, a: { balance: number }) => sum + Number(a.balance), 0);
+      // Range cobrindo os últimos 6 meses para o gráfico
+      const rangeStart = format(startOfMonth(subMonths(selectedDate, 5)), "yyyy-MM-dd");
+      const today = new Date().toISOString().split("T")[0];
+      const fifteenDays = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-      // Month income
-      const { data: incomeData } = await supabase
-        .from("transactions").select("amount")
-        .eq("type", "income").eq("status", "confirmed")
-        .gte("date", start).lte("date", end);
-      const monthIncome = (incomeData || []).reduce((sum: number, t: { amount: number }) => sum + Number(t.amount), 0);
+      // Todas as queries em paralelo: reduz de ~18 chamadas sequenciais para 5 paralelas
+      const [
+        { data: accounts },
+        { data: allTxns },
+        { data: invoices },
+        { data: catExp },
+        { data: recent },
+        { data: invoicesData },
+      ] = await Promise.all([
+        // 1. Saldo das contas ativas
+        supabase.from("accounts").select("balance").eq("user_id", user.id).eq("is_active", true),
 
-      // Month expenses
-      const { data: expenseData } = await supabase
-        .from("transactions").select("amount")
-        .eq("type", "expense").eq("status", "confirmed")
-        .gte("date", start).lte("date", end);
-      const monthExpenses = (expenseData || []).reduce((sum: number, t: { amount: number }) => sum + Number(t.amount), 0);
+        // 2. Todas receitas+despesas dos últimos 6 meses (cobre gráfico + resumo do mês)
+        supabase.from("transactions").select("amount, type, date")
+          .eq("user_id", user.id).eq("status", "confirmed")
+          .in("type", ["income", "expense"])
+          .gte("date", rangeStart).lte("date", end),
 
-      // Invoices debt (Total from open/closed invoices)
-      const { data: invoices } = await supabase.from("invoices").select("total_amount").in("status", ["open", "closed"]);
+        // 3. Dívida total em faturas abertas/fechadas
+        supabase.from("invoices").select("total_amount").eq("user_id", user.id).in("status", ["open", "closed"]),
+
+        // 4. Despesas por categoria (mês selecionado, com join)
+        supabase.from("transactions").select("amount, category:categories(name, color)")
+          .eq("user_id", user.id).eq("type", "expense").eq("status", "confirmed")
+          .gte("date", start).lte("date", end),
+
+        // 5. Últimas transações
+        supabase.from("transactions").select("id, description, amount, type, date")
+          .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
+
+        // 6. Faturas próximas do vencimento (15 dias)
+        supabase.from("invoices")
+          .select("id, total_amount, due_date, status, credit_card:credit_cards(name, color)")
+          .in("status", ["open", "closed"])
+          .gte("due_date", today).lte("due_date", fifteenDays)
+          .order("due_date", { ascending: true }),
+      ]);
+
+      // Saldo bancário
+      const totalAccounts = (accounts || []).reduce((sum: number, a: { balance: number }) => sum + Number(a.balance), 0);
       const totalInvoicesDebt = (invoices || []).reduce((sum: number, i: { total_amount: number }) => sum + Number(i.total_amount), 0);
 
-      setSummary({ totalBalance: totalBalance - totalInvoicesDebt, monthIncome, monthExpenses, monthBalance: monthIncome - monthExpenses });
+      // Agrupar allTxns por mês para o gráfico — zero queries adicionais
+      const monthMap = new Map<string, { income: number; expenses: number }>();
+      for (let i = 5; i >= 0; i--) {
+        monthMap.set(format(subMonths(selectedDate, i), "yyyy-MM"), { income: 0, expenses: 0 });
+      }
+      (allTxns || []).forEach((t: { amount: number; type: string; date: string }) => {
+        const key = t.date.substring(0, 7);
+        const entry = monthMap.get(key);
+        if (!entry) return;
+        if (t.type === "income") entry.income += Number(t.amount);
+        else entry.expenses += Number(t.amount);
+      });
 
-      // Expenses by category
-      const { data: catExp } = await supabase
-        .from("transactions")
-        .select("amount, category:categories(name, color)")
-        .eq("type", "expense").eq("status", "confirmed")
-        .gte("date", start).lte("date", end);
+      // Resumo do mês selecionado (extraído do allTxns, sem query extra)
+      const currentKey = format(selectedDate, "yyyy-MM");
+      const currentEntry = monthMap.get(currentKey) || { income: 0, expenses: 0 };
+      const monthIncome = currentEntry.income;
+      const monthExpenses = currentEntry.expenses;
 
+      setSummary({
+        totalBalance: totalAccounts - totalInvoicesDebt,
+        totalAccounts,
+        totalInvoicesDebt,
+        monthIncome,
+        monthExpenses,
+        monthBalance: monthIncome - monthExpenses,
+      });
+
+      // Gráfico: 6 meses com saldo acumulado
+      let cumulativeBalance = 0;
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = subMonths(selectedDate, i);
+        const entry = monthMap.get(format(d, "yyyy-MM")) || { income: 0, expenses: 0 };
+        cumulativeBalance += entry.income - entry.expenses;
+        months.push({ month: formatShortMonth(d), income: entry.income, expenses: entry.expenses, balance: cumulativeBalance });
+      }
+      setMonthlyData(months);
+
+      // Despesas por categoria
       const catMap = new Map<string, { name: string; value: number; color: string }>();
       (catExp || []).forEach((t) => {
         const cat = Array.isArray(t.category) ? t.category[0] : (t.category as { name: string; color: string | null } | null);
         const name = cat?.name || "Sem categoria";
         const color = cat?.color || "#64748b";
         const existing = catMap.get(name);
-        if (existing) {
-          existing.value += Number(t.amount);
-        } else {
-          catMap.set(name, { name, value: Number(t.amount), color });
-        }
+        if (existing) existing.value += Number(t.amount);
+        else catMap.set(name, { name, value: Number(t.amount), color });
       });
       setCategoryExpenses(Array.from(catMap.values()).sort((a, b) => b.value - a.value));
 
-      // Monthly comparison (last 6 months) with cumulative balance
-      const months = [];
-      let cumulativeBalance = 0;
-      for (let i = 5; i >= 0; i--) {
-        const d = subMonths(new Date(year, month - 1), i);
-        const mStart = format(startOfMonth(d), "yyyy-MM-dd");
-        const mEnd = format(endOfMonth(d), "yyyy-MM-dd");
-
-        const { data: mIncome } = await supabase
-          .from("transactions").select("amount")
-          .eq("type", "income").eq("status", "confirmed")
-          .gte("date", mStart).lte("date", mEnd);
-
-        const { data: mExpense } = await supabase
-          .from("transactions").select("amount")
-          .eq("type", "expense").eq("status", "confirmed")
-          .gte("date", mStart).lte("date", mEnd);
-
-        const inc = (mIncome || []).reduce((s: number, t: { amount: number }) => s + Number(t.amount), 0);
-        const exp = (mExpense || []).reduce((s: number, t: { amount: number }) => s + Number(t.amount), 0);
-        cumulativeBalance += inc - exp;
-
-        months.push({
-          month: formatShortMonth(d),
-          income: inc,
-          expenses: exp,
-          balance: cumulativeBalance,
-        });
-      }
-      setMonthlyData(months);
-
-      // Recent transactions
-      const { data: recent } = await supabase
-        .from("transactions")
-        .select("id, description, amount, type, date")
-        .order("date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(10);
       setRecentTransactions(recent || []);
 
-      // Upcoming invoices (due in next 15 days, not paid)
-      const today = new Date().toISOString().split("T")[0];
-      const fifteenDays = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-      const { data: invoicesData } = await supabase
-        .from("invoices")
-        .select("id, total_amount, due_date, status, credit_card:credit_cards(name, color)")
-        .in("status", ["open", "closed"])
-        .gte("due_date", today)
-        .lte("due_date", fifteenDays)
-        .order("due_date", { ascending: true });
-      
       const rawInvoices = (invoicesData as (UpcomingInvoice & { credit_card: UpcomingInvoice["credit_card"] | UpcomingInvoice["credit_card"][] })[]) || [];
       setUpcomingInvoices(rawInvoices.map(inv => ({
         ...inv,
@@ -248,44 +256,71 @@ export default function DashboardPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Saldo Total</CardTitle></CardHeader>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <Card className="relative overflow-hidden border-emerald-500/20 bg-emerald-500/5">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Saldo Bancário</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-emerald-500" />
-              <span className="text-2xl font-bold">{formatCurrency(summary.totalBalance)}</span>
+              <Wallet className="w-4 h-4 text-emerald-500" />
+              <span className="text-xl font-bold">{formatCurrency(summary.totalAccounts)}</span>
             </div>
           </CardContent>
         </Card>
-        <Card className="relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Receitas do Mês</CardTitle></CardHeader>
+
+        <Card className="relative overflow-hidden border-red-500/20 bg-red-500/5">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-red-500/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Dívida em Cartão</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-emerald-500" />
-              <span className="text-2xl font-bold text-emerald-500">{formatCurrency(summary.monthIncome)}</span>
+              <CreditCard className="w-4 h-4 text-red-500" />
+              <span className="text-xl font-bold">{formatCurrency(summary.totalInvoicesDebt)}</span>
             </div>
           </CardContent>
         </Card>
-        <Card className="relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-20 h-20 bg-red-500/5 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Despesas do Mês</CardTitle></CardHeader>
+
+        <Card className="relative overflow-hidden border-primary/20 bg-primary/5 col-span-1 sm:col-span-2 lg:col-span-1">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Saldo Total (Líquido)</CardTitle>
+          </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              <TrendingDown className="w-5 h-5 text-red-500" />
-              <span className="text-2xl font-bold text-red-500">{formatCurrency(summary.monthExpenses)}</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="relative overflow-hidden">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Saldo do Mês</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <span className={`text-2xl font-bold ${summary.monthBalance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                {formatCurrency(summary.monthBalance)}
+              <div className={`p-1 rounded-md ${summary.totalBalance >= 0 ? "bg-emerald-500/20" : "bg-red-500/20"}`}>
+                <TrendingUp className={`w-4 h-4 ${summary.totalBalance >= 0 ? "text-emerald-500" : "text-red-500"}`} />
+              </div>
+              <span className={`text-xl font-bold ${summary.totalBalance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                {formatCurrency(summary.totalBalance)}
               </span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1 font-medium italic">* Bancos - Dívidas de Cartão</p>
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Receitas do Mês</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <ArrowUpCircle className="w-4 h-4 text-emerald-500" />
+              <span className="text-xl font-bold text-emerald-500">{formatCurrency(summary.monthIncome)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Despesas do Mês</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <ArrowDownCircle className="w-4 h-4 text-red-500" />
+              <span className="text-xl font-bold text-red-500">{formatCurrency(summary.monthExpenses)}</span>
             </div>
           </CardContent>
         </Card>

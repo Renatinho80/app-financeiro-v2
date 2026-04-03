@@ -186,15 +186,16 @@ CREATE POLICY "Users can manage their own budgets" ON budgets FOR ALL USING (aut
 -- ============================================================
 -- Função para seed de categorias padrão ao criar usuário
 -- ============================================================
-CREATE OR REPLACE FUNCTION public.seed_default_categories()
-RETURNS trigger AS $$
+-- Helper compartilhado: insere as categorias padrão para um usuário.
+-- Chamado tanto pelo trigger de novo cadastro quanto pelo reset de conta.
+CREATE OR REPLACE FUNCTION public.insert_default_categories(_user_id UUID)
+RETURNS void AS $$
 DECLARE
-  _user_id UUID := NEW.id;
   _parent_id UUID;
 BEGIN
   -- Despesas
   INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Alimentação', 'expense', '🍔', '#f97316');
-  
+
   INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Moradia', 'expense', '🏠', '#8b5cf6') RETURNING id INTO _parent_id;
   INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Aluguel', 'expense', '🔑', '#8b5cf6', _parent_id);
   INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Condomínio', 'expense', '🏢', '#8b5cf6', _parent_id);
@@ -231,7 +232,14 @@ BEGIN
 
   -- Transferência
   INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Transferência entre contas', 'transfer', '🔄', '#0ea5e9');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- Trigger wrapper: delega ao helper compartilhado
+CREATE OR REPLACE FUNCTION public.seed_default_categories()
+RETURNS trigger AS $$
+BEGIN
+  PERFORM public.insert_default_categories(NEW.id);
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
@@ -248,7 +256,6 @@ CREATE OR REPLACE FUNCTION public.reset_user_account()
 RETURNS void AS $$
 DECLARE
   _user_id UUID := auth.uid();
-  _parent_id UUID;
 BEGIN
   IF _user_id IS NULL THEN
     RAISE EXCEPTION 'Não autenticado';
@@ -262,46 +269,7 @@ BEGIN
   DELETE FROM goals WHERE user_id = _user_id;
   DELETE FROM categories WHERE user_id = _user_id;
 
-  -- Re-seed padrão
-  -- Despesas
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Alimentação', 'expense', '🍔', '#f97316');
-  
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Moradia', 'expense', '🏠', '#8b5cf6') RETURNING id INTO _parent_id;
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Aluguel', 'expense', '🔑', '#8b5cf6', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Condomínio', 'expense', '🏢', '#8b5cf6', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'IPTU', 'expense', '📄', '#8b5cf6', _parent_id);
-
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Transporte', 'expense', '🚗', '#3b82f6') RETURNING id INTO _parent_id;
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Combustível', 'expense', '⛽', '#3b82f6', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Transporte público', 'expense', '🚌', '#3b82f6', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Uber', 'expense', '🚕', '#3b82f6', _parent_id);
-
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Saúde', 'expense', '🏥', '#ef4444') RETURNING id INTO _parent_id;
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Médico', 'expense', '👨‍⚕️', '#ef4444', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Farmácia', 'expense', '💊', '#ef4444', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Plano de saúde', 'expense', '🏥', '#ef4444', _parent_id);
-
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Educação', 'expense', '📚', '#06b6d4');
-
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Lazer', 'expense', '🎮', '#ec4899') RETURNING id INTO _parent_id;
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Streaming', 'expense', '📺', '#ec4899', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Restaurante', 'expense', '🍽️', '#ec4899', _parent_id);
-  INSERT INTO categories (user_id, name, type, icon, color, parent_id) VALUES (_user_id, 'Viagem', 'expense', '✈️', '#ec4899', _parent_id);
-
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Vestuário', 'expense', '👕', '#14b8a6');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Assinaturas', 'expense', '📱', '#6366f1');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Animais de estimação', 'expense', '🐾', '#a855f7');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Outros', 'expense', '📦', '#64748b');
-
-  -- Receitas
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Salário', 'income', '💰', '#22c55e');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Freelance', 'income', '💻', '#10b981');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Investimentos', 'income', '📈', '#059669');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Aluguel recebido', 'income', '🏠', '#15803d');
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Outros', 'income', '💵', '#4ade80');
-
-  -- Transferência
-  INSERT INTO categories (user_id, name, type, icon, color) VALUES (_user_id, 'Transferência entre contas', 'transfer', '🔄', '#0ea5e9');
+  PERFORM public.insert_default_categories(_user_id);
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = public;
 
@@ -400,11 +368,11 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.get_or_create_invoice(
   _credit_card_id UUID,
-  _user_id UUID,
   _transaction_date DATE
 )
 RETURNS UUID AS $$
 DECLARE
+  _user_id UUID := auth.uid();
   _closing_day INT;
   _due_day INT;
   _ref_month DATE;
@@ -412,8 +380,8 @@ DECLARE
   _due_date DATE;
   _invoice_id UUID;
 BEGIN
-  IF _user_id != auth.uid() THEN
-    RAISE EXCEPTION 'Acesso Negado';
+  IF _user_id IS NULL THEN
+    RAISE EXCEPTION 'Não autenticado';
   END IF;
 
   -- Buscar dias de fechamento e vencimento do cartão
@@ -462,18 +430,27 @@ BEGIN
   _due_date := public.get_next_business_day(_due_date);
 
   -- Tentar encontrar fatura existente
-  SELECT id INTO _invoice_id
-  FROM invoices
-  WHERE credit_card_id = _credit_card_id
-    AND reference_month = _ref_month
-  LIMIT 1;
+  DECLARE
+    _status TEXT;
+  BEGIN
+    SELECT id, status INTO _invoice_id, _status
+    FROM invoices
+    WHERE credit_card_id = _credit_card_id
+      AND reference_month = _ref_month
+    LIMIT 1;
 
-  -- Se não encontrou, criar
-  IF _invoice_id IS NULL THEN
-    INSERT INTO invoices (credit_card_id, user_id, reference_month, closing_date, due_date, total_amount, status)
-    VALUES (_credit_card_id, _user_id, _ref_month, _closing_date, _due_date, 0, 'open')
-    RETURNING id INTO _invoice_id;
-  END IF;
+    -- Se encontrou mas não está aberta, bloquear
+    IF _invoice_id IS NOT NULL AND _status != 'open' THEN
+      RAISE EXCEPTION 'A fatura selecionada está % e não permite novos lançamentos. Reabra-a na tela de faturas para continuar.', _status;
+    END IF;
+
+    -- Se não encontrou, criar
+    IF _invoice_id IS NULL THEN
+      INSERT INTO invoices (credit_card_id, user_id, reference_month, closing_date, due_date, total_amount, status)
+      VALUES (_credit_card_id, _user_id, _ref_month, _closing_date, _due_date, 0, 'open')
+      RETURNING id INTO _invoice_id;
+    END IF;
+  END;
 
   RETURN _invoice_id;
 END;
@@ -619,7 +596,7 @@ BEGIN
 
   RETURN NULL;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_income_expense_insert_balance ON transactions;
 CREATE TRIGGER on_income_expense_insert_balance
@@ -654,3 +631,60 @@ CREATE TABLE IF NOT EXISTS goals (
 ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can manage their own goals" ON goals;
 CREATE POLICY "Users can manage their own goals" ON goals FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- ============================================================
+-- Indexes de Performance
+-- Execute após criar todas as tabelas
+-- ============================================================
+
+-- Transações: filtros mais comuns (user + data, fatura, tipo/status)
+CREATE INDEX IF NOT EXISTS idx_transactions_user_date     ON transactions(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_invoice       ON transactions(invoice_id) WHERE invoice_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_transactions_user_type     ON transactions(user_id, type, status);
+CREATE INDEX IF NOT EXISTS idx_transactions_recurrence    ON transactions(recurrence_group_id) WHERE recurrence_group_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_transactions_installment   ON transactions(installment_group_id) WHERE installment_group_id IS NOT NULL;
+
+-- Faturas: filtro por cartão + status
+CREATE INDEX IF NOT EXISTS idx_invoices_card_status       ON invoices(credit_card_id, status);
+CREATE INDEX IF NOT EXISTS idx_invoices_user_due          ON invoices(user_id, due_date);
+
+-- Categorias: filtro por usuário + tipo
+CREATE INDEX IF NOT EXISTS idx_categories_user_type       ON categories(user_id, type);
+CREATE INDEX IF NOT EXISTS idx_categories_parent          ON categories(parent_id) WHERE parent_id IS NOT NULL;
+
+-- Contas: listagem ativa por usuário
+CREATE INDEX IF NOT EXISTS idx_accounts_user_active       ON accounts(user_id, is_active);
+
+-- Cartões: listagem por usuário
+CREATE INDEX IF NOT EXISTS idx_credit_cards_user          ON credit_cards(user_id, is_active);
+
+-- Metas e Orçamentos
+CREATE INDEX IF NOT EXISTS idx_goals_user                 ON goals(user_id);
+CREATE INDEX IF NOT EXISTS idx_budgets_user_month         ON budgets(user_id, month);
+
+-- ============================================================
+-- Constraints de Integridade de Negócio
+-- ============================================================
+
+-- Cartões de crédito: dia de vencimento não pode ser igual ao dia de fechamento
+ALTER TABLE credit_cards DROP CONSTRAINT IF EXISTS chk_due_day_differs_closing;
+ALTER TABLE credit_cards ADD CONSTRAINT chk_due_day_differs_closing
+  CHECK (due_day <> closing_day);
+
+-- Transações: valor deve ser positivo (sinal é determinado pelo campo type)
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS chk_amount_positive;
+ALTER TABLE transactions ADD CONSTRAINT chk_amount_positive
+  CHECK (amount > 0);
+
+-- Transações: número da parcela deve ser positivo quando preenchido
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS chk_installment_number_positive;
+ALTER TABLE transactions ADD CONSTRAINT chk_installment_number_positive
+  CHECK (installment_number IS NULL OR installment_number > 0);
+
+-- Transações: total de parcelas deve ser >= número da parcela atual
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS chk_installment_total_valid;
+ALTER TABLE transactions ADD CONSTRAINT chk_installment_total_valid
+  CHECK (
+    installment_total IS NULL OR
+    (installment_number IS NOT NULL AND installment_total >= installment_number)
+  );

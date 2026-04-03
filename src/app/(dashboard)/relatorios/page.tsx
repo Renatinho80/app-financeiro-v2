@@ -5,7 +5,7 @@ import packageInfo from "../../../../package.json";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
-import { FileDown, FileSpreadsheet, Upload, BarChart3, RefreshCw, AlertCircle, CheckCircle2, XCircle, Info, ChevronDown } from "lucide-react";
+import { FileDown, FileSpreadsheet, Upload, BarChart3, ChevronDown } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -67,17 +67,22 @@ export default function RelatoriosPage() {
   const fetchReport = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
+    const REPORT_LIMIT = 5000;
     const { data, error } = await supabase
       .from("transactions")
       .select("*, category:categories(name, icon)")
       .gte("date", startDate)
       .lte("date", endDate)
-      .order("date", { ascending: false });
+      .order("date", { ascending: false })
+      .limit(REPORT_LIMIT);
 
     if (error) {
       toast.error("Erro ao carregar relatório");
     } else {
       setTransactions((data as Transaction[]) || []);
+      if (data && data.length === REPORT_LIMIT) {
+        toast.warning("Relatório limitado a 5.000 transações. Reduza o intervalo de datas para ver todos os dados.");
+      }
     }
     setLoading(false);
   }, [startDate, endDate]);
@@ -201,9 +206,21 @@ export default function RelatoriosPage() {
     toast.success("Excel exportado com sucesso!");
   };
 
+  const MAX_FILE_SIZE_MB = 5;
+  const MAX_IMPORT_ROWS = 5000;
+
   const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      toast.error("Arquivo muito grande", {
+        description: `O tamanho máximo permitido é ${MAX_FILE_SIZE_MB}MB. Este arquivo tem ${(file.size / 1024 / 1024).toFixed(1)}MB.`,
+      });
+      e.target.value = "";
+      return;
+    }
+
     setCsvFile(file);
     
     if (file.name.endsWith('.xls') || file.name.endsWith('.xlsx')) {
@@ -259,14 +276,25 @@ export default function RelatoriosPage() {
         return;
       }
 
+      const dataRows = parsedLines.length - 1;
+      if (dataRows > MAX_IMPORT_ROWS) {
+        toast.error("Arquivo com muitas linhas", {
+          description: `Máximo de ${MAX_IMPORT_ROWS.toLocaleString("pt-BR")} linhas por importação. Este arquivo possui ${dataRows.toLocaleString("pt-BR")} linhas. Divida o arquivo e importe em partes.`,
+        });
+        return;
+      }
+
       const headerRow = parsedLines[0].map(h => h.toLowerCase());
       
+      const valRIndex = headerRow.findIndex(h => h.includes("valor (em r$)") || h.includes("valor em r$") || (h.includes("valor") && (h.includes("r$") || h.includes("brl"))));
+      const valIndex = valRIndex !== -1 ? valRIndex : headerRow.findIndex(h => (h.includes("valor") || h.includes("amount") || h.includes("total")) && !h.includes("us$") && !h.includes("dólar") && !h.includes("dolar"));
+
       const colIndex = {
-        date: headerRow.findIndex(h => h.includes("data")),
-        desc: headerRow.findIndex(h => h.includes("desc")),
-        val: headerRow.findIndex(h => h.includes("valor")),
-        type: headerRow.findIndex(h => h.includes("tipo")),
-        method: headerRow.findIndex(h => h.includes("metodo") || h.includes("método")),
+        date: headerRow.findIndex(h => h.includes("data") || h.includes("vencimento")),
+        desc: headerRow.findIndex(h => (h.includes("desc") || h.includes("histórico")) && !h.includes("cartão") && !h.includes("cartao")),
+        val: valIndex,
+        type: headerRow.findIndex(h => h.includes("tipo") || h.includes("natureza")),
+        method: headerRow.findIndex(h => h.includes("metodo") || h.includes("método") || h.includes("pagamento")),
         cat: headerRow.findIndex(h => h.includes("categoria")),
         parcela: headerRow.findIndex(h => h.includes("parcela"))
       };
@@ -361,8 +389,12 @@ export default function RelatoriosPage() {
         else if (rawMethod === "doc") payment_method = "doc";
         else if (["dinheiro", "espécie", "especie", "cash"].includes(rawMethod)) payment_method = "cash";
 
-        const catName = colIndex.cat !== -1 ? row[colIndex.cat]?.trim() : null;
-        if (catName && catName !== "-") newCategoryNames.add(catName);
+        const MAX_CAT_NAME_LENGTH = 100;
+        const rawCatName = colIndex.cat !== -1 ? row[colIndex.cat]?.trim() : null;
+        const catName = rawCatName && rawCatName !== "-" && rawCatName.length <= MAX_CAT_NAME_LENGTH
+          ? rawCatName
+          : null;
+        if (catName) newCategoryNames.add(catName);
 
         transactionsToInsert.push({ date, description, amount: amountValue, type, payment_method, rawCategory: catName, line: i + 1 });
       }
@@ -379,14 +411,18 @@ export default function RelatoriosPage() {
 
       // --- FASE 2: EXECUÇÃO ---
       const insertedIds: string[] = [];
-      const flatCats = allFlat();
+      const createdCategoryIds: string[] = [];
+      const flatCats = allFlat;
       const categoryMap = new Map(flatCats.map(c => [c.name.toLowerCase(), c.id]));
-      
+
       // Criar categorias faltantes
       for (const catName of Array.from(newCategoryNames)) {
         if (!categoryMap.has(catName.toLowerCase())) {
           const { data: newCat } = await supabase.from('categories').insert({ user_id: user.id, name: catName, type: 'expense' }).select('id').single();
-          if (newCat) categoryMap.set(catName.toLowerCase(), newCat.id);
+          if (newCat) {
+            categoryMap.set(catName.toLowerCase(), newCat.id);
+            createdCategoryIds.push(newCat.id);
+          }
         }
       }
       refetchCategories();
@@ -421,7 +457,7 @@ export default function RelatoriosPage() {
 
         let invoiceId = null;
         if (importTargetType === "credit_card" && importTargetId) {
-          const { data: invId } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _user_id: user.id, _transaction_date: tx.date });
+          const { data: invId } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _transaction_date: tx.date });
           invoiceId = invId;
         }
 
@@ -448,6 +484,9 @@ export default function RelatoriosPage() {
             toast.error("Muitos erros detectados durante a inserção. Iniciando limpeza automática...");
             if (insertedIds.length > 0) {
               await supabase.from("transactions").delete().in("id", insertedIds);
+            }
+            if (createdCategoryIds.length > 0) {
+              await supabase.from("categories").delete().in("id", createdCategoryIds);
             }
             results.details.push({ line: 0, description: "SISTEMA", status: "error", reason: "ROLLBACK EXECUTADO: Todas as inserções desta sessão foram removidas." });
             setImportResults(results);

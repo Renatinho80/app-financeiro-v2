@@ -2,32 +2,26 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Mail, Lock, TrendingUp } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [keepLoggedIn, setKeepLoggedIn] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       toast.error("Erro ao fazer login", {
@@ -37,13 +31,6 @@ export default function LoginPage() {
       });
       setLoading(false);
       return;
-    }
-
-    if (!keepLoggedIn) {
-      const expiry = new Date().getTime() + 12 * 60 * 60 * 1000; // 12 hours from now
-      localStorage.setItem("session_expiry", expiry.toString());
-    } else {
-      localStorage.removeItem("session_expiry");
     }
 
     toast.success("Login realizado com sucesso!");
@@ -64,8 +51,6 @@ export default function LoginPage() {
       </CardHeader>
 
       <CardContent className="space-y-4">
-
-
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">E-mail</Label>
@@ -99,26 +84,12 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 pt-1 pb-1">
-            <Switch
-              id="keepLoggedIn"
-              checked={keepLoggedIn}
-              onCheckedChange={setKeepLoggedIn}
-            />
-            <Label htmlFor="keepLoggedIn" className="text-sm font-normal text-muted-foreground cursor-pointer">
-              Mantenha-me conectado neste dispositivo
-            </Label>
-          </div>
-
           <Button type="submit" className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-medium" disabled={loading}>
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            ) : null}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             Entrar
           </Button>
         </form>
       </CardContent>
-
     </Card>
   );
 }

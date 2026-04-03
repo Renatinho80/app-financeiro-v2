@@ -56,12 +56,10 @@ export function useTransactions() {
   const resolveInvoiceId = async (
     supabase: ReturnType<typeof createClient>,
     creditCardId: string,
-    userId: string,
     transactionDate: string
   ): Promise<string | null> => {
     const { data, error } = await supabase.rpc("get_or_create_invoice", {
       _credit_card_id: creditCardId,
-      _user_id: userId,
       _transaction_date: transactionDate,
     });
     if (error) {
@@ -92,7 +90,7 @@ export function useTransactions() {
         // Resolve invoice for each installment if using credit card
         let invoiceId: string | null = null;
         if (txData.credit_card_id) {
-          invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, user.id, installmentDateStr);
+          invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, installmentDateStr);
         }
 
         txs.push({
@@ -130,7 +128,7 @@ export function useTransactions() {
         // Resolve invoice for each occurrence if using credit card
         let invoiceId: string | null = null;
         if (txData.credit_card_id) {
-          invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, user.id, dateStr);
+          invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, dateStr);
         }
 
         txs.push({
@@ -163,7 +161,7 @@ export function useTransactions() {
       // Resolve invoice if using credit card
       let invoiceId: string | null = null;
       if (txData.credit_card_id) {
-        invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, user.id, txData.date);
+        invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, txData.date);
       }
 
       const { error, data: newTx } = await supabase
@@ -196,7 +194,32 @@ export function useTransactions() {
   const updateTransaction = async (id: string, data: Partial<TransactionFormData>) => {
     const supabase = createClient();
     const { tag_ids, ...txData } = data;
-    const { error } = await supabase.from("transactions").update(txData).eq("id", id);
+
+    // Sincroniza invoice_id quando o cartão de crédito ou a data são alterados.
+    // TransactionFormData não inclui invoice_id, então precisamos resolvê-lo aqui.
+    const updatePayload: typeof txData & { invoice_id?: string | null } = { ...txData };
+
+    if ("credit_card_id" in txData || "date" in txData) {
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("credit_card_id, date")
+        .eq("id", id)
+        .single();
+
+      const effectiveCardId = "credit_card_id" in txData ? txData.credit_card_id : existing?.credit_card_id;
+      const effectiveDate = txData.date ?? existing?.date;
+
+      if (effectiveCardId && effectiveDate) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          updatePayload.invoice_id = await resolveInvoiceId(supabase, effectiveCardId, effectiveDate);
+        }
+      } else if (effectiveCardId === null || effectiveCardId === undefined) {
+        updatePayload.invoice_id = null;
+      }
+    }
+
+    const { error } = await supabase.from("transactions").update(updatePayload).eq("id", id);
     if (error) {
       toast.error("Erro ao atualizar transação", { description: error.message });
       return false;

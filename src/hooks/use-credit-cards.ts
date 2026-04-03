@@ -35,7 +35,9 @@ const fetcher = async () => {
 export function useCreditCards() {
   const { data, error, isLoading, mutate } = useSWR("credit_cards", fetcher, {
     revalidateOnFocus: false,
-    revalidateIfStale: false
+    revalidateIfStale: false,
+    dedupingInterval: 30_000,
+    errorRetryCount: 3,
   });
 
   const creditCards = data?.cards || [];

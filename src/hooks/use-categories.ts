@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
-import useSWR, { mutate as globalMutate } from "swr";
+import { useMemo } from "react";
+import useSWR from "swr";
 import { createClient } from "@/lib/supabase/client";
 import type { Category } from "@/types";
 import { toast } from "sonner";
@@ -28,10 +28,12 @@ const fetcher = async () => {
 export function useCategories() {
   const { data: categories = [], error, isLoading, mutate } = useSWR("categories", fetcher, {
     revalidateOnFocus: false,
-    revalidateIfStale: false
+    revalidateIfStale: false,
+    dedupingInterval: 30_000,
+    errorRetryCount: 3,
   });
 
-  const allFlat = useCallback(() => {
+  const allFlat = useMemo(() => {
     const flat: Category[] = [];
     categories.forEach(c => {
       flat.push(c);

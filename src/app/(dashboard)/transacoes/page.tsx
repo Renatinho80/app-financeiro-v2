@@ -266,7 +266,7 @@ export default function TransacoesPage() {
           <TransactionForm
             accounts={accounts}
             creditCards={creditCards}
-            categories={allFlat()}
+            categories={allFlat}
             initialData={editingTx}
             onSubmit={handleCreateOrUpdate}
             onCancel={() => { setIsFormOpen(false); setEditingTx(null); }}

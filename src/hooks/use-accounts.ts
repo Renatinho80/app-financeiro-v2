@@ -19,7 +19,9 @@ const fetcher = async () => {
 export function useAccounts() {
   const { data: accounts = [], error, isLoading, mutate } = useSWR("accounts", fetcher, {
     revalidateOnFocus: false,
-    revalidateIfStale: false
+    revalidateIfStale: false,
+    dedupingInterval: 30_000,
+    errorRetryCount: 3,
   });
 
   const createAccount = async (data: Partial<Account>) => {

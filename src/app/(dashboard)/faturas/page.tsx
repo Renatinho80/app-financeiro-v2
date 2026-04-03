@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useInvoices } from "@/hooks/use-invoices";
 import { useCreditCards } from "@/hooks/use-credit-cards";
+import { useAccounts } from "@/hooks/use-accounts";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,8 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils/format";
-import { Receipt, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { Receipt, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronUp, RotateCcw, TrendingUp } from "lucide-react";
 import type { Transaction } from "@/types";
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -22,7 +24,9 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 export default function FaturasPage() {
   const { creditCards } = useCreditCards();
+  const { accounts } = useAccounts();
   const [selectedCard, setSelectedCard] = useState<string | undefined>();
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>();
   const { invoices, loading, markAsPaid, reopenInvoice } = useInvoices(selectedCard);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
@@ -202,15 +206,57 @@ export default function FaturasPage() {
         </div>
       )}
 
-      <AlertDialog open={!!payingId} onOpenChange={(open) => !open && setPayingId(null)}>
+      <AlertDialog open={!!payingId} onOpenChange={(open) => {
+        if (!open) {
+          setPayingId(null);
+          setSelectedAccountId(undefined);
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Marcar fatura como paga?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação registrará o pagamento da fatura.</AlertDialogDescription>
+            <AlertDialogDescription>
+              Esta ação registrará o pagamento e debitará o valor da conta selecionada.
+            </AlertDialogDescription>
           </AlertDialogHeader>
+          
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label>Selecionar Conta para Débito</Label>
+              <Select value={selectedAccountId} onValueChange={(val) => setSelectedAccountId(val || undefined)}>
+                <SelectTrigger>
+                  <span data-slot="select-value">
+                    {selectedAccountId 
+                      ? accounts.find(a => a.id === selectedAccountId)?.name 
+                      : "Selecione a conta"}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.filter(a => a.is_active).map(acc => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      {acc.name} (Saldo: {formatCurrency(acc.balance)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (payingId) { await markAsPaid(payingId); setPayingId(null); } }} className="bg-emerald-600 text-white hover:bg-emerald-700">Confirmar Pagamento</AlertDialogAction>
+            <AlertDialogAction 
+              disabled={!selectedAccountId}
+              onClick={async () => { 
+                if (payingId && selectedAccountId) { 
+                  await markAsPaid(payingId, selectedAccountId); 
+                  setPayingId(null); 
+                  setSelectedAccountId(undefined);
+                } 
+              }} 
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              Confirmar Pagamento
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
