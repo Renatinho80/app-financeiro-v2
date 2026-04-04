@@ -11,14 +11,14 @@ const fetcher = async (creditCardId?: string) => {
   const supabase = createClient();
   let query = supabase
     .from("invoices")
-    .select("id, status, reference_month, closing_date, due_date, total_amount, paid_at, credit_card_id, user_id, credit_card:credit_cards(id, name, color, closing_day, due_day)")
+    .select("id, status, reference_month, closing_date, due_date, total_amount, paid_at, created_at, credit_card_id, user_id, credit_card:credit_cards(id, name, color, closing_day, due_day)")
     .order("due_date", { ascending: false });
 
   if (creditCardId) query = query.eq("credit_card_id", creditCardId);
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data as Invoice[]) || [];
+  return (data as unknown as Invoice[]) || [];
 };
 
 export function useInvoices(creditCardId?: string) {
