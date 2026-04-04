@@ -14,7 +14,7 @@ import {
   BarChart3,
   Settings,
   X,
-  Target
+  Target,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -52,7 +52,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <aside
         className={cn(
           "fixed top-0 left-0 z-50 h-full w-64 bg-card border-r border-border flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto",
-          open ? "translate-x-0" : "-translate-x-full"
+          open ? "translate-x-0" : "-translate-x-full",
         )}
       >
         {/* Logo */}
@@ -73,7 +73,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link
                 key={item.href}
@@ -84,20 +85,33 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                   isActive
                     ? "bg-emerald-500/10 text-emerald-500 shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent",
                 )}
               >
-                <item.icon className={cn("w-5 h-5", isActive && "text-emerald-500")} />
+                <item.icon
+                  className={cn("w-5 h-5", isActive && "text-emerald-500")}
+                />
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="p-4 border-t border-border">
+        {/* Versão mobile — visível apenas abaixo de 1024px, acima da linha */}
+        <div className="lg:hidden px-4 pt-3 pb-1 text-center">
+          <span className="text-[10px] text-muted-foreground/50 tracking-wide select-none">
+            v{packageInfo.version}
+          </span>
+        </div>
+
+        <div className="p-4 border-t border-border lg:block">
           <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent">
-            <p className="text-xs text-muted-foreground">Fluxo v{packageInfo.version}</p>
-            <p className="text-xs text-muted-foreground/60">Cada real no lugar certo.</p>
+            <p className="text-xs text-muted-foreground">
+              Fluxo v{packageInfo.version}
+            </p>
+            <p className="text-xs text-muted-foreground/60">
+              Cada real no lugar certo.
+            </p>
           </div>
         </div>
       </aside>
