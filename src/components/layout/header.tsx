@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Menu, Sun, Moon, LogOut, User, Settings } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,9 +19,10 @@ interface HeaderProps {
   onMenuClick: () => void;
   userName?: string;
   userEmail?: string;
+  userAvatarUrl?: string | null;
 }
 
-export function Header({ onMenuClick, userName, userEmail }: HeaderProps) {
+export function Header({ onMenuClick, userName, userEmail, userAvatarUrl }: HeaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
 
@@ -70,6 +71,7 @@ export function Header({ onMenuClick, userName, userEmail }: HeaderProps) {
         <DropdownMenu>
           <DropdownMenuTrigger className="relative h-9 w-9 rounded-full flex items-center justify-center hover:bg-accent transition-colors cursor-pointer">
             <Avatar className="h-9 w-9">
+              {userAvatarUrl && <AvatarImage src={userAvatarUrl} alt={userName} />}
               <AvatarFallback className="bg-emerald-500/10 text-emerald-500 text-sm font-semibold">
                 {initials}
               </AvatarFallback>

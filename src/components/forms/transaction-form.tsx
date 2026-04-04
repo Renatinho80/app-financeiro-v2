@@ -40,6 +40,7 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
   const [isInstallment, setIsInstallment] = useState(false);
   const [installmentTotal, setInstallmentTotal] = useState(2);
   const [submitting, setSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const recurringPreview = useMemo(() => {
     if (!isRecurring || !recurrenceType || !date) return null;
@@ -100,7 +101,34 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim() || amount <= 0) return;
+    setValidationError(null);
+
+    // Validação básica
+    if (!description.trim() || amount <= 0) {
+      setValidationError("Descrição e valor são obrigatórios");
+      return;
+    }
+
+    // Validação de conta/cartão obrigatório
+    if (txType === "expense" || txType === "income") {
+      if (!accountId && !creditCardId) {
+        setValidationError("Selecione uma conta ou um cartão de crédito");
+        return;
+      }
+    }
+
+    // Validação de transferência
+    if (txType === "transfer") {
+      if (!accountId) {
+        setValidationError("Selecione a conta de origem");
+        return;
+      }
+      if (showDestination && !destinationAccountId) {
+        setValidationError("Selecione a conta de destino");
+        return;
+      }
+    }
+
     setSubmitting(true);
     await onSubmit({
       type: txType, amount, description, date, notes: notes || undefined,
@@ -167,7 +195,7 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Conta</Label>
-          <Select value={accountId || "none"} onValueChange={v => v && setAccountId(v === "none" ? null : v)}>
+          <Select value={accountId || "none"} onValueChange={v => { v && setAccountId(v === "none" ? null : v); setValidationError(null); }}>
             <SelectTrigger>
               <span data-slot="select-value">{accountId ? accounts.find(a => a.id === accountId)?.name : "Selecione"}</span>
             </SelectTrigger>
@@ -180,7 +208,7 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
         {txType === "expense" && (
           <div className="space-y-2">
             <Label>Cartão de crédito</Label>
-            <Select value={creditCardId || "none"} onValueChange={v => v && setCreditCardId(v === "none" ? null : v)}>
+            <Select value={creditCardId || "none"} onValueChange={v => { v && setCreditCardId(v === "none" ? null : v); setValidationError(null); }}>
               <SelectTrigger>
                 <span data-slot="select-value">{creditCardId ? creditCards.find(c => c.id === creditCardId)?.name : "Selecione"}</span>
               </SelectTrigger>
@@ -192,11 +220,16 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
           </div>
         )}
       </div>
+      {validationError && (
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-600 text-sm">
+          ⚠️ {validationError}
+        </div>
+      )}
 
       {showDestination && (
         <div className="space-y-2">
           <Label>Conta destino</Label>
-          <Select value={destinationAccountId || "none"} onValueChange={v => v && setDestinationAccountId(v === "none" ? null : v)}>
+          <Select value={destinationAccountId || "none"} onValueChange={v => { v && setDestinationAccountId(v === "none" ? null : v); setValidationError(null); }}>
             <SelectTrigger>
               <span data-slot="select-value">{destinationAccountId ? accounts.find(a => a.id === destinationAccountId)?.name : "Conta destino"}</span>
             </SelectTrigger>
@@ -301,7 +334,11 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
 
       <div className="flex gap-3 pt-2">
         <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>Cancelar</Button>
-        <Button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={submitting}>
+        <Button
+          type="submit"
+          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+          disabled={submitting || (!accountId && !creditCardId && (txType === "expense" || txType === "income"))}
+        >
           {initialData ? "Salvar Alterações" : "Criar Transação"}
         </Button>
       </div>
