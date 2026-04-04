@@ -70,7 +70,11 @@ export default function FaturasPage() {
           <h1 className="text-2xl font-bold tracking-tight">Faturas</h1>
           <p className="text-muted-foreground">{invoices.length} fatura(s)</p>
         </div>
-        <Select value={selectedCard || "all"} onValueChange={v => v && setSelectedCard(v === "all" ? undefined : v)}>
+        <Select
+          value={selectedCard || "all"}
+          onValueChange={v => v && setSelectedCard(v === "all" ? undefined : v)}
+          items={{ "all": "Todos os cartões", ...Object.fromEntries(creditCards.map(c => [c.id, c.name])) }}
+        >
           <SelectTrigger className="w-48"><SelectValue placeholder="Todos os cartões" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os cartões</SelectItem>

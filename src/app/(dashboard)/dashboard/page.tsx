@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useSWRConfig } from "swr";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,13 +23,16 @@ type UpcomingInvoice = {
 };
 
 export default function DashboardPage() {
+  const { cache } = useSWRConfig();
+  const lastCacheStateRef = useRef<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), "yyyy-MM"));
-  const [summary, setSummary] = useState({ totalBalance: 0, totalAccounts: 0, totalInvoicesDebt: 0, monthIncome: 0, monthExpenses: 0, monthBalance: 0 });
+  const [summary, setSummary] = useState({ totalBalance: 0, totalAccounts: 0, totalInvoicesDebt: 0, totalCreditCardSpending: 0, monthIncome: 0, monthExpenses: 0, monthBalance: 0 });
   const [categoryExpenses, setCategoryExpenses] = useState<{ name: string; value: number; color: string }[]>([]);
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expenses: number; balance: number }[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<{ id: string; description: string; amount: number; type: string; date: string }[]>([]);
   const [upcomingInvoices, setUpcomingInvoices] = useState<UpcomingInvoice[]>([]);
+  const [, setRefetchCounter] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,6 +59,7 @@ export default function DashboardPage() {
         { data: catExp },
         { data: recent },
         { data: invoicesData },
+        { data: creditCardTxns },
       ] = await Promise.all([
         // 1. Saldo das contas ativas
         supabase.from("accounts").select("balance").eq("user_id", user.id).eq("is_active", true),
@@ -75,6 +80,7 @@ export default function DashboardPage() {
 
         // 5. Últimas transações
         supabase.from("transactions").select("id, description, amount, type, date")
+          .eq("user_id", user.id)
           .order("date", { ascending: false }).order("created_at", { ascending: false }).limit(10),
 
         // 6. Faturas próximas do vencimento (15 dias)
@@ -83,11 +89,17 @@ export default function DashboardPage() {
           .in("status", ["open", "closed"])
           .gte("due_date", today).lte("due_date", fifteenDays)
           .order("due_date", { ascending: true }),
+
+        // 7. Total gasto em cartões de crédito de todo o tempo
+        supabase.from("transactions").select("amount")
+          .eq("user_id", user.id).eq("type", "expense").eq("status", "confirmed")
+          .not("credit_card_id", "is", "null"),
       ]);
 
       // Saldo bancário
       const totalAccounts = (accounts || []).reduce((sum: number, a: { balance: number }) => sum + Number(a.balance), 0);
       const totalInvoicesDebt = (invoices || []).reduce((sum: number, i: { total_amount: number }) => sum + Number(i.total_amount), 0);
+      const totalCreditCardSpending = (creditCardTxns || []).reduce((sum: number, t: { amount: number }) => sum + Number(t.amount), 0);
 
       // Agrupar allTxns por mês para o gráfico — zero queries adicionais
       const monthMap = new Map<string, { income: number; expenses: number }>();
@@ -112,6 +124,7 @@ export default function DashboardPage() {
         totalBalance: totalAccounts - totalInvoicesDebt,
         totalAccounts,
         totalInvoicesDebt,
+        totalCreditCardSpending,
         monthIncome,
         monthExpenses,
         monthBalance: monthIncome - monthExpenses,
@@ -152,7 +165,37 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [selectedMonth]);  
+  }, [selectedMonth, cache]);
+
+  // Monitor SWR cache for critical data changes
+  useEffect(() => {
+    const checkCacheChanges = () => {
+      const currentState = {
+        accounts: cache.get("accounts"),
+        credit_cards: cache.get("credit_cards"),
+        invoices: cache.get("invoices"),
+      };
+
+      // If any key changed, trigger refetch
+      const hasChanges =
+        lastCacheStateRef.current.accounts !== currentState.accounts ||
+        lastCacheStateRef.current.credit_cards !== currentState.credit_cards ||
+        lastCacheStateRef.current.invoices !== currentState.invoices;
+
+      if (hasChanges && lastCacheStateRef.current.accounts !== undefined) {
+        setRefetchCounter((prev) => prev + 1);
+      }
+
+      lastCacheStateRef.current = currentState;
+    };
+
+    // Check immediately
+    checkCacheChanges();
+
+    // Check periodically for cache changes
+    const interval = setInterval(checkCacheChanges, 1000);
+    return () => clearInterval(interval);
+  }, [cache]);  
 
   // Generate Insight
   const getInsight = () => {
@@ -256,13 +299,13 @@ export default function DashboardPage() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        <Card className="relative overflow-hidden border-emerald-500/20 bg-emerald-500/5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="relative overflow-hidden border-emerald-500/20 bg-emerald-500/5 min-h-[140px] flex flex-col">
           <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 flex-none">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Saldo Bancário</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 flex items-end">
             <div className="flex items-center gap-2">
               <Wallet className="w-4 h-4 text-emerald-500" />
               <span className="text-xl font-bold">{formatCurrency(summary.totalAccounts)}</span>
@@ -270,42 +313,24 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-red-500/20 bg-red-500/5">
+        <Card className="relative overflow-hidden border-red-500/20 bg-red-500/5 min-h-[140px] flex flex-col">
           <div className="absolute top-0 right-0 w-16 h-16 bg-red-500/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Dívida em Cartão</CardTitle>
+          <CardHeader className="pb-2 flex-none">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Gasto em Cartões</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 flex items-end">
             <div className="flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-red-500" />
-              <span className="text-xl font-bold">{formatCurrency(summary.totalInvoicesDebt)}</span>
+              <span className="text-xl font-bold">{formatCurrency(summary.totalCreditCardSpending)}</span>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-primary/20 bg-primary/5 col-span-1 sm:col-span-2 lg:col-span-1">
-          <div className="absolute top-0 right-0 w-16 h-16 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Saldo Total (Líquido)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <div className={`p-1 rounded-md ${summary.totalBalance >= 0 ? "bg-emerald-500/20" : "bg-red-500/20"}`}>
-                <TrendingUp className={`w-4 h-4 ${summary.totalBalance >= 0 ? "text-emerald-500" : "text-red-500"}`} />
-              </div>
-              <span className={`text-xl font-bold ${summary.totalBalance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                {formatCurrency(summary.totalBalance)}
-              </span>
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1 font-medium italic">* Bancos - Dívidas de Cartão</p>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden">
-          <CardHeader className="pb-2">
+        <Card className="relative overflow-hidden min-h-[140px] flex flex-col">
+          <CardHeader className="pb-2 flex-none">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Receitas do Mês</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 flex items-end">
             <div className="flex items-center gap-2">
               <ArrowUpCircle className="w-4 h-4 text-emerald-500" />
               <span className="text-xl font-bold text-emerald-500">{formatCurrency(summary.monthIncome)}</span>
@@ -313,11 +338,11 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden">
-          <CardHeader className="pb-2">
+        <Card className="relative overflow-hidden min-h-[140px] flex flex-col">
+          <CardHeader className="pb-2 flex-none">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Despesas do Mês</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 flex items-end">
             <div className="flex items-center gap-2">
               <ArrowDownCircle className="w-4 h-4 text-red-500" />
               <span className="text-xl font-bold text-red-500">{formatCurrency(summary.monthExpenses)}</span>

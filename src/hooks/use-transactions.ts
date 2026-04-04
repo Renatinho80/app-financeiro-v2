@@ -118,16 +118,18 @@ export function useTransactions() {
     else if (txData.is_recurring && txData.recurrence_type) {
       const groupId = crypto.randomUUID();
       const baseDate = new Date(txData.date);
-      const endDate = txData.recurrence_end_date ? new Date(txData.recurrence_end_date) : addMonths(baseDate, 12);
+      const endDate = txData.recurrence_end_date ? new Date(txData.recurrence_end_date) : addMonths(baseDate, 3);
+      // Só cria fatura para o mês atual + próximo mês — evita proliferação de faturas futuras
+      const invoiceHorizon = addMonths(new Date(), 1);
       const txs = [];
       let currentDate = baseDate;
 
       while (currentDate <= endDate) {
         const dateStr = format(currentDate, "yyyy-MM-dd");
 
-        // Resolve invoice for each occurrence if using credit card
+        // Resolve invoice apenas para o ciclo atual e o próximo
         let invoiceId: string | null = null;
-        if (txData.credit_card_id) {
+        if (txData.credit_card_id && currentDate <= invoiceHorizon) {
           invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, dateStr);
         }
 

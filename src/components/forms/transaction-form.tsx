@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { addDays, addWeeks, addMonths, addYears } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +40,22 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
   const [isInstallment, setIsInstallment] = useState(false);
   const [installmentTotal, setInstallmentTotal] = useState(2);
   const [submitting, setSubmitting] = useState(false);
+
+  const recurringPreview = useMemo(() => {
+    if (!isRecurring || !recurrenceType || !date) return null;
+    const baseDate = new Date(date);
+    const endDate = recurrenceEndDate ? new Date(recurrenceEndDate) : addMonths(baseDate, 3);
+    let count = 0;
+    let cur = new Date(baseDate);
+    while (cur <= endDate && count < 500) {
+      count++;
+      if (recurrenceType === "daily") cur = addDays(cur, 1);
+      else if (recurrenceType === "weekly") cur = addWeeks(cur, 1);
+      else if (recurrenceType === "monthly") cur = addMonths(cur, 1);
+      else if (recurrenceType === "yearly") cur = addYears(cur, 1);
+    }
+    return count;
+  }, [isRecurring, recurrenceType, date, recurrenceEndDate]);
 
   useEffect(() => {
     if (initialData) {
@@ -231,28 +248,37 @@ export function TransactionForm({ accounts, creditCards, categories, onSubmit, o
         <Switch id="recurring" checked={isRecurring} onCheckedChange={v => { setIsRecurring(v); if (v) setIsInstallment(false); }} />
       </div>
       {isRecurring && (
-        <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-emerald-500/20">
-          <div className="space-y-2">
-            <Label>Frequência</Label>
-            <Select value={recurrenceType || ""} onValueChange={v => v && setRecurrenceType(v as "daily" | "weekly" | "monthly" | "yearly")}>
-              <SelectTrigger>
-                <span data-slot="select-value">
-                  {recurrenceType === "daily" ? "Diário" : recurrenceType === "weekly" ? "Semanal" : recurrenceType === "monthly" ? "Mensal" : recurrenceType === "yearly" ? "Anual" : "Selecione"}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="daily">Diário</SelectItem>
-                <SelectItem value="weekly">Semanal</SelectItem>
-                <SelectItem value="monthly">Mensal</SelectItem>
-                <SelectItem value="yearly">Anual</SelectItem>
-              </SelectContent>
-            </Select>
+        <>
+          <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-emerald-500/20">
+            <div className="space-y-2">
+              <Label>Frequência</Label>
+              <Select value={recurrenceType || ""} onValueChange={v => v && setRecurrenceType(v as "daily" | "weekly" | "monthly" | "yearly")}>
+                <SelectTrigger>
+                  <span data-slot="select-value">
+                    {recurrenceType === "daily" ? "Diário" : recurrenceType === "weekly" ? "Semanal" : recurrenceType === "monthly" ? "Mensal" : recurrenceType === "yearly" ? "Anual" : "Selecione"}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Diário</SelectItem>
+                  <SelectItem value="weekly">Semanal</SelectItem>
+                  <SelectItem value="monthly">Mensal</SelectItem>
+                  <SelectItem value="yearly">Anual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Data fim</Label>
+              <Input type="date" value={recurrenceEndDate} onChange={e => setRecurrenceEndDate(e.target.value)} />
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Data fim</Label>
-            <Input type="date" value={recurrenceEndDate} onChange={e => setRecurrenceEndDate(e.target.value)} />
-          </div>
-        </div>
+          {recurringPreview !== null && (
+            <p className="text-xs text-muted-foreground pl-4">
+              {recurringPreview} transação{recurringPreview !== 1 ? "ões" : ""} serão criadas
+              {!recurrenceEndDate && " (padrão: 3 meses)"}
+              {creditCardId && " · faturas geradas apenas para o mês atual e o próximo"}
+            </p>
+          )}
+        </>
       )}
 
       <div className="flex items-center justify-between">

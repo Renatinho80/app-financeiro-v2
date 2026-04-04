@@ -274,6 +274,70 @@ END;
 $$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = public;
 
 -- ============================================================
+-- RPC: Limpeza seletiva — o usuário escolhe o que remover
+-- Dependências obrigatórias:
+--   _del_credit_cards = TRUE  → faturas são sempre deletadas (CASCADE)
+--   _del_categories   = TRUE  → orçamentos são sempre deletados (FK)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.reset_user_account_selective(
+  _del_transactions  BOOLEAN DEFAULT FALSE,
+  _del_accounts      BOOLEAN DEFAULT FALSE,
+  _del_credit_cards  BOOLEAN DEFAULT FALSE,
+  _del_invoices      BOOLEAN DEFAULT FALSE,
+  _del_goals         BOOLEAN DEFAULT FALSE,
+  _del_categories    BOOLEAN DEFAULT FALSE,
+  _reseed_categories BOOLEAN DEFAULT FALSE
+)
+RETURNS void AS $$
+DECLARE
+  _user_id UUID := auth.uid();
+BEGIN
+  IF _user_id IS NULL THEN
+    RAISE EXCEPTION 'Não autenticado';
+  END IF;
+
+  -- 1. Transações primeiro (referenciam contas, cartões, faturas e categorias)
+  --    Tags são vinculadas via transaction_tags (CASCADE), deletam junto
+  IF _del_transactions THEN
+    DELETE FROM tags         WHERE user_id = _user_id;
+    DELETE FROM transactions WHERE user_id = _user_id;
+  END IF;
+
+  -- 2. Faturas: deletar explicitamente antes dos cartões para evitar double-cascade
+  IF _del_invoices OR _del_credit_cards THEN
+    DELETE FROM invoices WHERE user_id = _user_id;
+  END IF;
+
+  -- 3. Cartões (faturas já foram removidas acima se necessário)
+  IF _del_credit_cards THEN
+    DELETE FROM credit_cards WHERE user_id = _user_id;
+  END IF;
+
+  -- 4. Contas bancárias
+  IF _del_accounts THEN
+    DELETE FROM accounts WHERE user_id = _user_id;
+  END IF;
+
+  -- 5. Metas (independentes)
+  IF _del_goals THEN
+    DELETE FROM goals WHERE user_id = _user_id;
+  END IF;
+
+  -- 6. Categorias: orçamentos referenciam categorias — deletar primeiro
+  --    Subcategorias têm parent_id sem ON DELETE — deletar antes das parents
+  IF _del_categories THEN
+    DELETE FROM budgets    WHERE user_id = _user_id;
+    DELETE FROM categories WHERE user_id = _user_id AND parent_id IS NOT NULL;
+    DELETE FROM categories WHERE user_id = _user_id;
+
+    IF _reseed_categories THEN
+      PERFORM public.insert_default_categories(_user_id);
+    END IF;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER SET search_path = public;
+
+-- ============================================================
 -- RPC: Atualizar saldo de conta (incremento/decremento)
 -- Chamada pelo frontend em use-transactions.ts
 -- ============================================================
@@ -690,3 +754,36 @@ ALTER TABLE transactions ADD CONSTRAINT chk_installment_total_valid
     installment_total IS NULL OR
     (installment_number IS NOT NULL AND installment_total >= installment_number)
   ) NOT VALID;
+
+-- ============================================================
+-- Storage: Avatars (Fotos de Perfil)
+-- ============================================================
+
+-- Criar bucket de avatars (público para leitura)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Política: qualquer um pode ler avatars publicamente
+DROP POLICY IF EXISTS "Public Read Avatars" ON storage.objects;
+CREATE POLICY "Public Read Avatars"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'avatars');
+
+-- Política: usuário pode fazer upload e atualizar apenas seu próprio avatar
+DROP POLICY IF EXISTS "User Upload Own Avatar" ON storage.objects;
+CREATE POLICY "User Upload Own Avatar"
+  ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Política: usuário pode deletar seu próprio avatar
+DROP POLICY IF EXISTS "User Delete Own Avatar" ON storage.objects;
+CREATE POLICY "User Delete Own Avatar"
+  ON storage.objects FOR DELETE
+  USING (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );

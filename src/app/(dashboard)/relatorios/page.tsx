@@ -43,6 +43,13 @@ export default function RelatoriosPage() {
     return d.toISOString().split("T")[0];
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+  // Datas efetivamente aplicadas — só mudam ao clicar Filtrar ou escolher sugestão
+  const [appliedStart, setAppliedStart] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split("T")[0];
+  });
+  const [appliedEnd, setAppliedEnd] = useState(() => new Date().toISOString().split("T")[0]);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<string[][]>([]);
@@ -78,8 +85,8 @@ export default function RelatoriosPage() {
     const { data, error } = await supabase
       .from("transactions")
       .select("*, category:categories(name, icon)")
-      .gte("date", startDate)
-      .lte("date", endDate)
+      .gte("date", appliedStart)
+      .lte("date", appliedEnd)
       .order("date", { ascending: false })
       .limit(REPORT_LIMIT);
 
@@ -94,7 +101,7 @@ export default function RelatoriosPage() {
       }
     }
     setLoading(false);
-  }, [startDate, endDate]);
+  }, [appliedStart, appliedEnd]);
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
@@ -445,16 +452,31 @@ export default function RelatoriosPage() {
       // --- FASE 2: EXECUÇÃO ---
       const insertedIds: string[] = [];
       const createdCategoryIds: string[] = [];
-      const flatCats = allFlat;
-      const categoryMap = new Map(flatCats.map(c => [c.name.toLowerCase(), c.id]));
 
-      // Criar categorias faltantes
+      // Fetch fresco do banco — não depende do cache SWR que pode estar desatualizado
+      const { data: freshCats } = await supabase.from('categories').select('id, name').eq('user_id', user.id);
+      const categoryMap = new Map((freshCats || []).map(c => [c.name.toLowerCase(), c.id]));
+
+      // Criar categorias faltantes (as que não existem no banco)
       for (const catName of Array.from(newCategoryNames)) {
         if (!categoryMap.has(catName.toLowerCase())) {
-          const { data: newCat } = await supabase.from('categories').insert({ user_id: user.id, name: catName, type: 'expense' }).select('id').single();
+          const { data: newCat, error: catErr } = await supabase
+            .from('categories')
+            .insert({ user_id: user.id, name: catName, type: 'expense' })
+            .select('id')
+            .single();
           if (newCat) {
             categoryMap.set(catName.toLowerCase(), newCat.id);
             createdCategoryIds.push(newCat.id);
+          } else if (catErr) {
+            // Fallback: buscar por nome caso o INSERT tenha falhado (ex: corrida ou constraint)
+            const { data: existing } = await supabase
+              .from('categories')
+              .select('id')
+              .eq('user_id', user.id)
+              .ilike('name', catName)
+              .maybeSingle();
+            if (existing) categoryMap.set(catName.toLowerCase(), existing.id);
           }
         }
       }
@@ -490,7 +512,13 @@ export default function RelatoriosPage() {
 
         let invoiceId = null;
         if (importTargetType === "credit_card" && importTargetId) {
-          const { data: invId } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _transaction_date: tx.date, _ignore_closed: true });
+          const { data: invId, error: invError } = await supabase.rpc("get_or_create_invoice", { _credit_card_id: importTargetId, _transaction_date: tx.date, _ignore_closed: true });
+          if (invError) {
+            results.errors++;
+            results.details.push({ line: tx.line, description: tx.description, status: "error", reason: `Erro ao obter fatura: ${invError.message}` });
+            setImportProgress(i + 1);
+            continue;
+          }
           invoiceId = invId;
         }
 
@@ -595,19 +623,50 @@ export default function RelatoriosPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold tracking-tight">Relatórios</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={exportPDF}><FileDown className="w-4 h-4 mr-1" /> PDF</Button>
           <Button variant="outline" size="sm" onClick={exportExcel}><FileSpreadsheet className="w-4 h-4 mr-1" /> Excel</Button>
           <Button variant="outline" size="sm" onClick={() => setIsImportOpen(true)} className="gap-1">
             <Upload className="w-4 h-4" />
-            Importar Arquivo
+            <span className="sm:hidden">Importar</span>
+            <span className="hidden sm:inline">Importar Arquivo</span>
           </Button>
         </div>
       </div>
 
       {/* Filters */}
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-4 space-y-3">
+          {/* Sugestões rápidas */}
+          <div className="flex flex-wrap gap-2">
+            {[
+              { label: "Este mês", getRange: () => { const n = new Date(); return { s: new Date(n.getFullYear(), n.getMonth(), 1).toISOString().split("T")[0], e: n.toISOString().split("T")[0] }; } },
+              { label: "Mês passado", getRange: () => { const n = new Date(); const f = new Date(n.getFullYear(), n.getMonth() - 1, 1); const l = new Date(n.getFullYear(), n.getMonth(), 0); return { s: f.toISOString().split("T")[0], e: l.toISOString().split("T")[0] }; } },
+              { label: "Últimos 3 meses", getRange: () => { const n = new Date(); const f = new Date(n.getFullYear(), n.getMonth() - 2, 1); return { s: f.toISOString().split("T")[0], e: n.toISOString().split("T")[0] }; } },
+              { label: "Últimos 6 meses", getRange: () => { const n = new Date(); const f = new Date(n.getFullYear(), n.getMonth() - 5, 1); return { s: f.toISOString().split("T")[0], e: n.toISOString().split("T")[0] }; } },
+              { label: "Este ano", getRange: () => { const n = new Date(); return { s: `${n.getFullYear()}-01-01`, e: n.toISOString().split("T")[0] }; } },
+              { label: "Ano passado", getRange: () => { const y = new Date().getFullYear() - 1; return { s: `${y}-01-01`, e: `${y}-12-31` }; } },
+            ].map(({ label, getRange }) => {
+              const { s, e } = getRange();
+              const active = appliedStart === s && appliedEnd === e;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => { setStartDate(s); setEndDate(e); setAppliedStart(s); setAppliedEnd(e); }}
+                  className={cn(
+                    "text-xs px-3 py-1 rounded-full border transition-colors",
+                    active
+                      ? "bg-emerald-600 text-white border-emerald-600"
+                      : "border-border text-muted-foreground hover:border-emerald-500 hover:text-emerald-600"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {/* Filtro por datas + botão */}
           <div className="flex flex-col sm:flex-row gap-4 items-end">
             <div className="space-y-2 flex-1">
               <Label>Data inicial</Label>
@@ -615,9 +674,19 @@ export default function RelatoriosPage() {
             </div>
             <div className="space-y-2 flex-1">
               <Label>Data final</Label>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              <Input
+                type="date"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+                max={new Date().toISOString().split("T")[0]}
+              />
             </div>
-            <Button onClick={fetchReport} className="bg-emerald-600 hover:bg-emerald-700 text-white">Filtrar</Button>
+            <Button
+              onClick={() => { setAppliedStart(startDate); setAppliedEnd(endDate); }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              Filtrar
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -665,7 +734,7 @@ export default function RelatoriosPage() {
           ) : (
             <>
               {/* Toolbar: ordenação + linhas por página */}
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-1">
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <ArrowUpDown className="w-3.5 h-3.5 mr-1" />
                   {(["date", "description", "amount"] as const).map(f => (
@@ -706,12 +775,15 @@ export default function RelatoriosPage() {
               {/* Lista paginada */}
               <div className="space-y-1">
                 {paginatedTransactions.map(tx => (
-                  <div key={tx.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 text-sm">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-muted-foreground w-20 shrink-0">{formatDate(tx.date)}</span>
-                      <span className="truncate">{tx.description}</span>
+                  <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg hover:bg-muted/50 text-sm gap-0.5 sm:gap-0">
+                    <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 min-w-0">
+                      <span className="text-muted-foreground text-xs sm:text-sm w-16 sm:w-20 shrink-0">{formatDate(tx.date)}</span>
+                      <span className="truncate flex-1 sm:flex-none">{tx.description}</span>
+                      <span className={cn("shrink-0 sm:hidden font-medium", tx.type === "income" ? "text-emerald-500" : "text-red-500")}>
+                        {tx.type === "income" ? "+" : "-"}{formatCurrency(Number(tx.amount))}
+                      </span>
                     </div>
-                    <span className={cn("shrink-0 ml-2", tx.type === "income" ? "text-emerald-500" : "text-red-500")}>
+                    <span className={cn("hidden sm:inline shrink-0 ml-2", tx.type === "income" ? "text-emerald-500" : "text-red-500")}>
                       {tx.type === "income" ? "+" : "-"}{formatCurrency(Number(tx.amount))}
                     </span>
                   </div>
@@ -719,8 +791,8 @@ export default function RelatoriosPage() {
               </div>
 
               {/* Controles de paginação */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border text-xs text-muted-foreground">
-                <span>{transactions.length} transação(ões) · página {currentPage} de {totalReportPages}</span>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1 border-t border-border text-xs text-muted-foreground">
+                <span className="text-center sm:text-left">{transactions.length} transação(ões) · pág. {currentPage}/{totalReportPages}</span>
                 <div className="flex items-center gap-1">
                   <button onClick={() => goToPage(1)} disabled={currentPage === 1} className="p-1.5 rounded-md hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed">
                     <ChevronsLeft className="w-4 h-4" />
@@ -866,15 +938,17 @@ export default function RelatoriosPage() {
               </div>
               <div className="space-y-1">
                 <Label>Destino:</Label>
-                <Select value={importTargetId} onValueChange={(v) => setImportTargetId(v || "")} disabled={!importTargetType}>
+                <Select
+                  value={importTargetId}
+                  onValueChange={(v) => setImportTargetId(v || "")}
+                  disabled={!importTargetType}
+                  items={Object.fromEntries([
+                    ...(importTargetType === 'account' ? accounts.map(a => [a.id, a.name]) : []),
+                    ...(importTargetType === 'credit_card' ? creditCards.map(c => [c.id, c.name]) : []),
+                  ])}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o destino">
-                      {importTargetId ? (
-                        importTargetType === "account" 
-                          ? accounts.find(a => a.id === importTargetId)?.name 
-                          : creditCards.find(c => c.id === importTargetId)?.name
-                      ) : undefined}
-                    </SelectValue>
+                    <SelectValue placeholder="Selecione o destino" />
                   </SelectTrigger>
                   <SelectContent>
                     {importTargetType === 'account' && accounts.map(a => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}

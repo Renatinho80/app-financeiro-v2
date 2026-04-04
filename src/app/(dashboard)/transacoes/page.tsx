@@ -193,7 +193,7 @@ export default function TransacoesPage() {
                     {getTransactionStatusLabel(tx.status)}
                   </Badge>
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => handleEdit(tx)}>
                     <Pencil className="w-4 h-4" />
                   </Button>
