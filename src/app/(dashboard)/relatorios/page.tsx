@@ -153,7 +153,7 @@ export default function RelatoriosPage() {
     
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
-    doc.text("FinanceApp PRO", 14, 20);
+    doc.text("Fluxo", 14, 20);
     doc.setFontSize(12);
     doc.text("Relatório Financeiro Mensal", 14, 28);
     
@@ -222,7 +222,7 @@ export default function RelatoriosPage() {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setTextColor(150);
-        doc.text(`Página ${i} de ${pageCount} - FinanceApp PRO v${packageInfo.version}`, 14, doc.internal.pageSize.height - 10);
+        doc.text(`Página ${i} de ${pageCount} - Fluxo v${packageInfo.version}`, 14, doc.internal.pageSize.height - 10);
     }
 
     doc.save(`financeapp-relatorio-${startDate}-${endDate}.pdf`);

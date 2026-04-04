@@ -706,6 +706,8 @@ CREATE POLICY "Users can manage their own goals" ON goals FOR ALL USING (auth.ui
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date     ON transactions(user_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_invoice       ON transactions(invoice_id) WHERE invoice_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_transactions_user_type     ON transactions(user_id, type, status);
+-- Índice composto para queries do dashboard: user + status + type + date range
+CREATE INDEX IF NOT EXISTS idx_transactions_dashboard     ON transactions(user_id, status, type, date DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_recurrence    ON transactions(recurrence_group_id) WHERE recurrence_group_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_transactions_installment   ON transactions(installment_group_id) WHERE installment_group_id IS NOT NULL;
 

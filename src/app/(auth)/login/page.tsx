@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Mail, Lock, TrendingUp } from "lucide-react";
+import { Loader2, Mail, Lock } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -41,10 +42,7 @@ export default function LoginPage() {
   return (
     <Card className="border-border/50 shadow-2xl backdrop-blur-sm bg-card/95">
       <CardHeader className="text-center space-y-3">
-        <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-          <TrendingUp className="w-7 h-7 text-white" />
-        </div>
-        <CardTitle className="text-2xl font-bold tracking-tight">FinanceApp</CardTitle>
+        <Logo size="md" showTagline className="mx-auto" />
         <CardDescription className="text-muted-foreground">
           Entre na sua conta para gerenciar suas finanças
         </CardDescription>

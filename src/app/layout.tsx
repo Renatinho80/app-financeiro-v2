@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Outfit } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -9,8 +9,14 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
+  weight: ["300", "800"],
+});
+
 export const metadata: Metadata = {
-  title: "FinanceApp — Finanças Pessoais",
+  title: "Fluxo — Cada Real no Lugar Certo",
   description: "Gerencie suas finanças pessoais com inteligência. Controle contas, cartões, transações e orçamentos.",
 };
 
@@ -20,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} h-full`} suppressHydrationWarning>
+    <html lang="pt-BR" className={`${inter.variable} ${outfit.variable} h-full`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col font-sans antialiased" suppressHydrationWarning>
         <ThemeProvider
           attribute="class"

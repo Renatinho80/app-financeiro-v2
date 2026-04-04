@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Mail, Lock, User, TrendingUp } from "lucide-react";
+import { Loader2, Mail, Lock, User } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -66,9 +67,7 @@ export default function RegisterPage() {
   return (
     <Card className="border-border/50 shadow-2xl backdrop-blur-sm bg-card/95">
       <CardHeader className="text-center space-y-3">
-        <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-          <TrendingUp className="w-7 h-7 text-white" />
-        </div>
+        <Logo size="md" showTagline className="mx-auto" />
         <CardTitle className="text-2xl font-bold tracking-tight">Criar Conta</CardTitle>
         <CardDescription className="text-muted-foreground">
           Comece a controlar suas finanças agora

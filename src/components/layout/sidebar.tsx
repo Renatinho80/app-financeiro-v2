@@ -13,11 +13,11 @@ import {
   Tags,
   BarChart3,
   Settings,
-  TrendingUp,
   X,
   Target
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/ui/logo";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -57,11 +57,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-border">
-          <Link href="/dashboard" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-md shadow-emerald-500/20">
-              <TrendingUp className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-bold tracking-tight">FinanceApp</span>
+          <Link href="/dashboard">
+            <Logo size="sm" />
           </Link>
           <Button
             variant="ghost"
@@ -81,6 +78,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={onClose}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
@@ -98,8 +96,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
         <div className="p-4 border-t border-border">
           <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent">
-            <p className="text-xs text-muted-foreground">FinanceApp v{packageInfo.version}</p>
-            <p className="text-xs text-muted-foreground/60">Finanças sob controle</p>
+            <p className="text-xs text-muted-foreground">Fluxo v{packageInfo.version}</p>
+            <p className="text-xs text-muted-foreground/60">Cada real no lugar certo.</p>
           </div>
         </div>
       </aside>
