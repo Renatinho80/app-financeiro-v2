@@ -71,19 +71,6 @@ export function useCategories() {
 
   const deleteCategory = async (id: string) => {
     const supabase = createClient();
-    // Check if category has transactions
-    const { count } = await supabase
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("category_id", id);
-
-    if (count && count > 0) {
-      toast.error("Não é possível excluir", {
-        description: `Esta categoria possui ${count} transação(ões) vinculada(s). Reatribua-as antes de excluir.`,
-      });
-      return false;
-    }
-
     const { error } = await supabase.from("categories").delete().eq("id", id);
     if (error) {
       toast.error("Erro ao excluir categoria", { description: error.message });
@@ -94,14 +81,35 @@ export function useCategories() {
     return true;
   };
 
-  return { 
-    categories, 
-    loading: isLoading, 
+  const deleteCategoryWithReassign = async (id: string, newCategoryId: string) => {
+    const supabase = createClient();
+    const { error: updateErr } = await supabase
+      .from("transactions")
+      .update({ category_id: newCategoryId })
+      .eq("category_id", id);
+    if (updateErr) {
+      toast.error("Erro ao reatribuir transações", { description: updateErr.message });
+      return false;
+    }
+    const { error: deleteErr } = await supabase.from("categories").delete().eq("id", id);
+    if (deleteErr) {
+      toast.error("Erro ao excluir categoria", { description: deleteErr.message });
+      return false;
+    }
+    toast.success("Transações reatribuídas e categoria excluída!");
+    mutate();
+    return true;
+  };
+
+  return {
+    categories,
+    loading: isLoading,
     error,
-    allFlat, 
-    createCategory, 
-    updateCategory, 
-    deleteCategory, 
-    refetch: mutate 
+    allFlat,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    deleteCategoryWithReassign,
+    refetch: mutate
   };
 }

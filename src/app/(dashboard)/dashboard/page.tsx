@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expenses: number; balance: number }[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<{ id: string; description: string; amount: number; type: string; date: string }[]>([]);
   const [upcomingInvoices, setUpcomingInvoices] = useState<UpcomingInvoice[]>([]);
+  const [budgetAlerts, setBudgetAlerts] = useState<{ name: string; icon: string | null; pct: number; spent: number; budget: number }[]>([]);
   const [refetchCounter, setRefetchCounter] = useState(0);
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function DashboardPage() {
         { data: recent },
         { data: invoicesData },
         { data: creditCardTxns },
+        { data: budgetsData },
       ] = await Promise.all([
         // 1. Saldo das contas ativas
         supabase.from("accounts").select("balance").eq("user_id", user.id).eq("is_active", true),
@@ -74,7 +76,7 @@ export default function DashboardPage() {
         supabase.from("invoices").select("total_amount").eq("user_id", user.id).in("status", ["open", "closed"]),
 
         // 4. Despesas por categoria (mês selecionado, com join)
-        supabase.from("transactions").select("amount, category:categories(name, color)")
+        supabase.from("transactions").select("amount, category_id, category:categories(name, color)")
           .eq("user_id", user.id).eq("type", "expense").eq("status", "confirmed")
           .gte("date", start).lte("date", end),
 
@@ -94,6 +96,12 @@ export default function DashboardPage() {
         supabase.from("transactions").select("amount")
           .eq("user_id", user.id).eq("type", "expense").eq("status", "confirmed")
           .not("credit_card_id", "is", "null"),
+
+        // 8. Orçamentos do mês selecionado
+        supabase.from("budgets")
+          .select("amount, category_id, category:categories(name, icon)")
+          .eq("user_id", user.id)
+          .eq("month", `${format(selectedDate, "yyyy-MM")}-01`),
       ]);
 
       // Saldo bancário
@@ -141,17 +149,34 @@ export default function DashboardPage() {
       }
       setMonthlyData(months);
 
-      // Despesas por categoria
+      // Despesas por categoria + mapa por category_id para orçamentos
       const catMap = new Map<string, { name: string; value: number; color: string }>();
-      (catExp || []).forEach((t) => {
+      const spendingByCatId = new Map<string, number>();
+      (catExp || []).forEach((t: { amount: number; category_id?: string; category: unknown }) => {
         const cat = Array.isArray(t.category) ? t.category[0] : (t.category as { name: string; color: string | null } | null);
         const name = cat?.name || "Sem categoria";
-        const color = cat?.color || "#64748b";
+        const color = (cat as { color?: string | null })?.color || "#64748b";
         const existing = catMap.get(name);
         if (existing) existing.value += Number(t.amount);
         else catMap.set(name, { name, value: Number(t.amount), color });
+        if (t.category_id) spendingByCatId.set(t.category_id, (spendingByCatId.get(t.category_id) || 0) + Number(t.amount));
       });
       setCategoryExpenses(Array.from(catMap.values()).sort((a, b) => b.value - a.value));
+
+      // Alertas de orçamento
+      if (budgetsData?.length) {
+        const alerts = (budgetsData as { amount: number; category_id: string; category: unknown }[])
+          .map(b => {
+            const cat = Array.isArray(b.category) ? b.category[0] : (b.category as { name: string; icon: string | null } | null);
+            const spent = spendingByCatId.get(b.category_id) || 0;
+            const pct = Number(b.amount) > 0 ? (spent / Number(b.amount)) * 100 : 0;
+            return { name: cat?.name || "Categoria", icon: (cat as { icon?: string | null })?.icon || null, pct, spent, budget: Number(b.amount) };
+          })
+          .sort((a, b) => b.pct - a.pct);
+        setBudgetAlerts(alerts);
+      } else {
+        setBudgetAlerts([]);
+      }
 
       setRecentTransactions(recent || []);
 
@@ -518,6 +543,49 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Budget Alerts */}
+      {budgetAlerts.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-[#534AB7]" />
+              Orçamentos do Mês
+            </CardTitle>
+            <Link href="/orcamentos" className="text-sm text-[#534AB7] hover:text-[#433ba3] transition-colors">
+              Gerenciar →
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {budgetAlerts.slice(0, 5).map((b, i) => (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-1.5">
+                      {b.icon && <span className="text-base leading-none">{b.icon}</span>}
+                      <span className="truncate">{b.name}</span>
+                    </span>
+                    <span className={`text-xs font-medium shrink-0 ${b.pct >= 100 ? "text-red-500" : b.pct >= 80 ? "text-amber-500" : "text-muted-foreground"}`}>
+                      {formatCurrency(b.spent)} / {formatCurrency(b.budget)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${b.pct >= 100 ? "bg-red-500" : b.pct >= 80 ? "bg-amber-500" : "bg-[#534AB7]"}`}
+                      style={{ width: `${Math.min(b.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {budgetAlerts.length > 5 && (
+                <p className="text-xs text-muted-foreground text-center pt-1">
+                  +{budgetAlerts.length - 5} categorias — <Link href="/orcamentos" className="text-[#534AB7] hover:underline">ver todas</Link>
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Transactions */}
       <Card>

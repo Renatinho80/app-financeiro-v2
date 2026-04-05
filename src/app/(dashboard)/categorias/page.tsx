@@ -14,21 +14,58 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCOUNT_COLORS } from "@/lib/utils/constants";
 import { getCategoryTypeLabel } from "@/lib/utils/format";
-import { Plus, Pencil, Trash2, Tags, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Tags, ChevronRight, Loader2 } from "lucide-react";
 import type { Category, CategoryType } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 
 const defaultIcons = ["🍽️", "🛒", "🚗", "🏠", "💡", "🎮", "✈️", "🏥", "📚", "👕", "🐾", "💰", "📈", "💳", "🚌", "📱", "💼", "👶", "🎁", "🥗"];
 
 export default function CategoriasPage() {
-  const { categories, loading, createCategory, updateCategory, deleteCategory } = useCategories();
+  const { categories, loading, allFlat, createCategory, updateCategory, deleteCategory, deleteCategoryWithReassign } = useCategories();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formName, setFormName] = useState("");
   const [formType, setFormType] = useState<CategoryType>("expense");
   const [formColor, setFormColor] = useState(ACCOUNT_COLORS[0]);
   const [formIcon, setFormIcon] = useState("");
   const [formParentId, setFormParentId] = useState<string | null>(null);
+
+  // Delete flow
+  const [deletingCat, setDeletingCat] = useState<Category | null>(null);
+  const [deletingTxCount, setDeletingTxCount] = useState<number | null>(null);
+  const [checkingDelete, setCheckingDelete] = useState(false);
+  const [reassignCategoryId, setReassignCategoryId] = useState("");
+  const [reassigning, setReassigning] = useState(false);
+
+  const handleDeleteClick = async (cat: Category) => {
+    setDeletingCat(cat);
+    setDeletingTxCount(null);
+    setReassignCategoryId("");
+    setCheckingDelete(true);
+    const supabase = createClient();
+    const { count } = await supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("category_id", cat.id);
+    setDeletingTxCount(count ?? 0);
+    setCheckingDelete(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingCat) return;
+    await deleteCategory(deletingCat.id);
+    setDeletingCat(null);
+    setDeletingTxCount(null);
+  };
+
+  const handleReassignAndDelete = async () => {
+    if (!deletingCat || !reassignCategoryId) return;
+    setReassigning(true);
+    await deleteCategoryWithReassign(deletingCat.id, reassignCategoryId);
+    setReassigning(false);
+    setDeletingCat(null);
+    setDeletingTxCount(null);
+  };
 
   const openCreate = (type: CategoryType, parentId?: string) => {
     setEditing(null);
@@ -108,8 +145,12 @@ export default function CategoriasPage() {
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(cat)}>
                   <Pencil className="w-3.5 h-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeletingId(cat.id)}>
-                  <Trash2 className="w-3.5 h-3.5" />
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"
+                  onClick={() => handleDeleteClick(cat)}
+                  disabled={checkingDelete && deletingCat?.id === cat.id}>
+                  {checkingDelete && deletingCat?.id === cat.id
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Trash2 className="w-3.5 h-3.5" />}
                 </Button>
               </div>
             </div>
@@ -125,8 +166,12 @@ export default function CategoriasPage() {
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(sub)}>
                         <Pencil className="w-3 h-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => setDeletingId(sub.id)}>
-                        <Trash2 className="w-3 h-3" />
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive"
+                        onClick={() => handleDeleteClick(sub)}
+                        disabled={checkingDelete && deletingCat?.id === sub.id}>
+                        {checkingDelete && deletingCat?.id === sub.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Trash2 className="w-3 h-3" />}
                       </Button>
                     </div>
                   </div>
@@ -215,18 +260,77 @@ export default function CategoriasPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deletingId} onOpenChange={(open) => !open && setDeletingId(null)}>
+      {/* Confirm delete — sem transações */}
+      <AlertDialog
+        open={!!deletingCat && deletingTxCount === 0}
+        onOpenChange={open => !open && setDeletingCat(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir categoria?</AlertDialogTitle>
-            <AlertDialogDescription>Categorias com transações vinculadas não podem ser excluídas.</AlertDialogDescription>
+            <AlertDialogTitle>Excluir "{deletingCat?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta categoria não possui transações vinculadas. A exclusão é permanente.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (deletingId) { await deleteCategory(deletingId); setDeletingId(null); } }} className="bg-destructive text-white hover:bg-destructive/90">Excluir</AlertDialogAction>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive text-white hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reassign dialog — com transações */}
+      <Dialog
+        open={!!deletingCat && deletingTxCount !== null && deletingTxCount > 0}
+        onOpenChange={open => !open && setDeletingCat(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Categoria em uso</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            <p className="text-sm text-muted-foreground">
+              A categoria <strong>"{deletingCat?.name}"</strong> possui{" "}
+              <strong>{deletingTxCount} transação{deletingTxCount !== 1 ? "ões" : ""}</strong> vinculada{deletingTxCount !== 1 ? "s" : ""}.
+              Selecione uma categoria para reatribuí-las antes de excluir.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Reatribuir para</Label>
+              <Select value={reassignCategoryId} onValueChange={setReassignCategoryId}>
+                <SelectTrigger>
+                  <span data-slot="select-value">
+                    {reassignCategoryId
+                      ? (() => { const c = allFlat.find(x => x.id === reassignCategoryId); return c ? `${c.icon ?? ""} ${c.name}`.trim() : "Selecione..."; })()
+                      : "Selecione uma categoria..."}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {allFlat
+                    .filter(c => c.type === deletingCat?.type && c.id !== deletingCat?.id)
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.icon} {c.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setDeletingCat(null)}>Cancelar</Button>
+              <Button
+                variant="destructive"
+                disabled={!reassignCategoryId || reassigning}
+                onClick={handleReassignAndDelete}
+              >
+                {reassigning && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                Reatribuir e Excluir
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

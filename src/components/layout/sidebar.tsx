@@ -15,6 +15,7 @@ import {
   Settings,
   X,
   Target,
+  PiggyBank,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/contas", label: "Contas", icon: Landmark },
   { href: "/cartoes", label: "Cartões", icon: CreditCard },
   { href: "/faturas", label: "Faturas", icon: Receipt },
+  { href: "/orcamentos", label: "Orçamentos", icon: PiggyBank },
   { href: "/categorias", label: "Categorias", icon: Tags },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { href: "/metas", label: "Metas", icon: Target },
