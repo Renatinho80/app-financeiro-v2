@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { useCategories } from "@/hooks/use-categories";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ACCOUNT_COLORS } from "@/lib/utils/constants";
 import { getCategoryTypeLabel } from "@/lib/utils/format";
@@ -217,7 +217,11 @@ export default function CategoriasPage() {
             <div className="space-y-2">
               <Label>Tipo</Label>
               <Select value={formType} onValueChange={(v) => setFormType(v as CategoryType)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <span data-slot="select-value">
+                    {formType === "expense" ? "Despesa" : formType === "income" ? "Receita" : "Transferência"}
+                  </span>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="expense">Despesa</SelectItem>
                   <SelectItem value="income">Receita</SelectItem>
@@ -298,7 +302,7 @@ export default function CategoriasPage() {
             </p>
             <div className="space-y-1.5">
               <Label>Reatribuir para</Label>
-              <Select value={reassignCategoryId} onValueChange={setReassignCategoryId}>
+              <Select value={reassignCategoryId} onValueChange={v => v && setReassignCategoryId(v)}>
                 <SelectTrigger>
                   <span data-slot="select-value">
                     {reassignCategoryId
