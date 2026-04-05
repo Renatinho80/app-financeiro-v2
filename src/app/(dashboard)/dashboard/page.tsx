@@ -13,6 +13,7 @@ import { TrendingUp, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Cre
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, parseISO } from "date-fns";
 import Link from "next/link";
+import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 
 type UpcomingInvoice = {
   id: string;
@@ -293,6 +294,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <OnboardingWizard />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <Select value={selectedMonth} onValueChange={(v) => v && setSelectedMonth(v)}>
