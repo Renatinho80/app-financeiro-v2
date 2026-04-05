@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { NotificationBanner } from "@/components/layout/notification-banner";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
 
 export default function DashboardLayout({
   children,
@@ -56,6 +57,7 @@ export default function DashboardLayout({
         </main>
       </div>
       <BottomNav />
+      <OnboardingWizard />
     </div>
   );
 }
