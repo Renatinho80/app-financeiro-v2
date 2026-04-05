@@ -370,7 +370,7 @@ export default function OrcamentosPage() {
               <Label>Categoria</Label>
               <Select
                 value={formCategoryId}
-                onValueChange={setFormCategoryId}
+                onValueChange={v => v && setFormCategoryId(v)}
                 disabled={!!editing}
               >
                 <SelectTrigger>
