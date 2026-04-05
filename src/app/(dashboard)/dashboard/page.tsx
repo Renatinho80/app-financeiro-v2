@@ -32,7 +32,7 @@ export default function DashboardPage() {
   const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expenses: number; balance: number }[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<{ id: string; description: string; amount: number; type: string; date: string }[]>([]);
   const [upcomingInvoices, setUpcomingInvoices] = useState<UpcomingInvoice[]>([]);
-  const [, setRefetchCounter] = useState(0);
+  const [refetchCounter, setRefetchCounter] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -165,7 +165,7 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, [selectedMonth, cache]);
+  }, [selectedMonth, cache, refetchCounter]);
 
   // Monitor SWR cache for critical data changes
   useEffect(() => {

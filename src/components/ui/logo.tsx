@@ -3,86 +3,68 @@ import { cn } from "@/lib/utils";
 interface LogoProps {
   /** sm = sidebar/compact, md = auth pages, lg = standalone large */
   size?: "sm" | "md" | "lg";
-  /** Show slogan "CADA REAL NO LUGAR CERTO." */
+  /** Show slogan "SUAS FINANÇAS, SIMPLIFICADAS." */
   showTagline?: boolean;
   className?: string;
 }
 
-/* ── Ícone Fluxo (arcos + R$) ── */
-function FluxoIcon({ px }: { px: number }) {
+/* ── Ícone Finia (hexágono + pulso) ── */
+function FiniaIcon({ px }: { px: number }) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 200 200"
-      width={px}
-      height={px}
-      aria-hidden="true"
-    >
-      {/* Arco superior */}
-      <path d="M 40,100 A 60,60 0 0 1 160,100" fill="none" stroke="#1D9E75" strokeWidth="5" strokeLinecap="round" />
-      {/* Ponta superior direita */}
-      <polyline points="148,76 160,100 136,104" fill="none" stroke="#1D9E75" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-      {/* Arco inferior */}
-      <path d="M 160,120 A 60,60 0 0 1 40,120" fill="none" stroke="#0F6E56" strokeWidth="5" strokeLinecap="round" />
-      {/* Ponta inferior esquerda */}
-      <polyline points="52,144 40,120 64,116" fill="none" stroke="#0F6E56" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-      {/* R$ central */}
-      <text x="100" y="118" textAnchor="middle" fontFamily="Arial, sans-serif" fontSize="36" fontWeight="700" fill="#1D9E75">R$</text>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width={px} height={px} aria-hidden="true">
+      <polygon points="100,20 160,55 160,125 100,160 40,125 40,55" fill="#EEEDFE" stroke="#534AB7" strokeWidth="3" />
+      <polygon points="100,36 148,63 148,117 100,144 52,117 52,63" fill="none" stroke="#AFA9EC" strokeWidth="1" strokeDasharray="4,3" />
+      <polyline points="55,90 72,90 82,62 92,118 102,68 112,90 145,90" fill="none" stroke="#534AB7" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-/* ── Nome "fluxo" ── */
-function FluxoNome({ fontSize }: { fontSize: number }) {
-  // Largura proporcional ao fontSize: "fluxo" em Outfit 800 tem ~3.3× o fontSize
-  const w = Math.round(fontSize * 3.4);
+/* ── Nome "finia" ── */
+function FiniaName({ fontSize }: { fontSize: number }) {
+  // "finia" em Space Grotesk 700 com letterSpacing -2 ≈ 3.5× o fontSize
+  const w = Math.round(fontSize * 3.5);
   const h = Math.round(fontSize * 1.25);
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox={`0 0 ${w} ${h}`}
-      width={w}
-      height={h}
-      aria-label="fluxo"
-    >
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${w} ${h}`} width={w} height={h} aria-label="finia">
       <text
         x={w / 2}
         y={fontSize}
         textAnchor="middle"
-        fontFamily="var(--font-outfit), 'Arial Black', sans-serif"
-        fontWeight="800"
+        fontFamily="var(--font-space-grotesk), 'Arial Black', sans-serif"
+        fontWeight="700"
         fontSize={fontSize}
-        letterSpacing="-1"
-        fill="#1D9E75"
+        letterSpacing="-2"
+        fill="currentColor"
       >
-        fluxo
+        finia
       </text>
     </svg>
   );
 }
 
 /* ── Slogan ── */
-function FluxoSlogan({ fontSize }: { fontSize: number }) {
+function FiniaSlogan({ fontSize }: { fontSize: number }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-px flex-1 bg-border" />
-      <span className="w-1.5 h-1.5 rounded-full bg-[#1D9E75] shrink-0" />
+    <div className="flex flex-col items-center gap-1 w-full">
       <span
         style={{
-          fontFamily: "var(--font-outfit), Arial, sans-serif",
+          fontFamily: "var(--font-space-grotesk), Arial, sans-serif",
           fontWeight: 300,
           fontSize: `${fontSize}px`,
-          letterSpacing: "0.18em",
-          textTransform: "uppercase",
-          color: "var(--color-muted-foreground, #9ca3af)",
-          lineHeight: 1,
+          letterSpacing: "0.2em",
+          textTransform: "uppercase" as const,
+          color: "var(--color-muted-foreground, #888780)",
           whiteSpace: "nowrap",
+          lineHeight: 1,
         }}
       >
-        Cada real no lugar certo.
+        Suas finanças, simplificadas.
       </span>
-      <span className="w-1.5 h-1.5 rounded-full bg-[#1D9E75] shrink-0" />
-      <div className="h-px flex-1 bg-border" />
+      <div className="flex items-center gap-2 w-full">
+        <div className="h-px flex-1" style={{ backgroundColor: "#D3D1C7" }} />
+        <div className="w-2 h-2 rotate-45 shrink-0 bg-[#534AB7]" />
+        <div className="h-px flex-1" style={{ backgroundColor: "#D3D1C7" }} />
+      </div>
     </div>
   );
 }
@@ -95,22 +77,24 @@ export function Logo({ size = "sm", showTagline = false, className }: LogoProps)
     lg: { iconPx: 72, nameFontSize: 58, sloganFontSize: 13 },
   }[size];
 
-  /* Com slogan: empilhado verticalmente (ícone em cima, nome+slogan abaixo) */
+  /* Com slogan: ícone + nome em linha, slogan abaixo */
   if (showTagline) {
     return (
-      <div className={cn("flex flex-col items-center gap-1", className)}>
-        <FluxoIcon px={config.iconPx} />
-        <FluxoNome fontSize={config.nameFontSize} />
-        <FluxoSlogan fontSize={config.sloganFontSize} />
+      <div className={cn("flex flex-col items-center gap-2 text-[#26215C] dark:text-[#EEEDFE]", className)}>
+        <div className="flex items-center gap-3">
+          <FiniaIcon px={config.iconPx} />
+          <FiniaName fontSize={config.nameFontSize} />
+        </div>
+        <FiniaSlogan fontSize={config.sloganFontSize} />
       </div>
     );
   }
 
   /* Sem slogan: horizontal compacto (sidebar) */
   return (
-    <div className={cn("flex items-center gap-2.5", className)}>
-      <FluxoIcon px={config.iconPx} />
-      <FluxoNome fontSize={config.nameFontSize} />
+    <div className={cn("flex items-center gap-2.5 text-[#26215C] dark:text-[#EEEDFE]", className)}>
+      <FiniaIcon px={config.iconPx} />
+      <FiniaName fontSize={config.nameFontSize} />
     </div>
   );
 }

@@ -37,6 +37,7 @@ interface jsPDFExtended extends jsPDF {
 export default function RelatoriosPage() {
   const [loading, setLoading] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [userName, setUserName] = useState("");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(1);
@@ -105,6 +106,15 @@ export default function RelatoriosPage() {
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
 
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      const { data } = await supabase.from("profiles").select("name").eq("id", user.id).single();
+      setUserName(data?.name || user.email || "");
+    });
+  }, []);
+
   const totalIncome = transactions.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const totalExpenses = transactions.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
@@ -148,18 +158,20 @@ export default function RelatoriosPage() {
     const doc = new jsPDF() as jsPDFExtended;
     
     // Header
-    doc.setFillColor(16, 185, 129); // emerald-500
+    doc.setFillColor(83, 74, 183); // #534AB7 finia purple
     doc.rect(0, 0, 210, 40, 'F');
-    
+
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
-    doc.text("Fluxo", 14, 20);
-    doc.setFontSize(12);
-    doc.text("Relatório Financeiro Mensal", 14, 28);
-    
-    doc.setFontSize(10);
-    doc.text(`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`, 140, 20);
-    doc.text(`Gerado em: ${formatDate(new Date().toISOString())}`, 140, 28);
+    doc.text("finia", 14, 16);
+    doc.setFontSize(11);
+    doc.text("Relatório Financeiro", 14, 25);
+    if (userName) doc.text(`Titular: ${userName}`, 14, 33);
+
+    doc.setFontSize(9);
+    doc.text(`Período: ${formatDate(appliedStart)} a ${formatDate(appliedEnd)}`, 130, 20);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}`, 130, 28);
+    doc.text(`finia v${packageInfo.version}`, 130, 36);
 
     doc.setTextColor(0, 0, 0);
 
@@ -222,27 +234,61 @@ export default function RelatoriosPage() {
         doc.setPage(i);
         doc.setFontSize(8);
         doc.setTextColor(150);
-        doc.text(`Página ${i} de ${pageCount} - Fluxo v${packageInfo.version}`, 14, doc.internal.pageSize.height - 10);
+        doc.text(`Página ${i} de ${pageCount} - finia v${packageInfo.version}`, 14, doc.internal.pageSize.height - 10);
     }
 
-    doc.save(`financeapp-relatorio-${startDate}-${endDate}.pdf`);
+    doc.save(`finia-relatorio-${appliedStart}-${appliedEnd}.pdf`);
     toast.success("Relatório PRO PDF gerado!");
   };
 
   const exportExcel = async () => {
     const XLSX = await import("xlsx");
-    const data = transactions.map(t => ({
-      Data: formatDate(t.date),
-      Descrição: t.description,
-      Tipo: t.type === "income" ? "Receita" : t.type === "expense" ? "Despesa" : "Transferência",
-      Categoria: (t.category as { name: string } | null)?.name || "",
-      Valor: Number(t.amount),
-      Status: t.status,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
+
+    const geradoEm = new Date().toLocaleDateString("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+
+    // Linhas de cabeçalho
+    const headerRows: (string | number)[][] = [
+      ["finia — Relatório Financeiro"],
+      [],
+      ["Titular:", userName || "-"],
+      ["Período:", `${formatDate(appliedStart)} a ${formatDate(appliedEnd)}`],
+      ["Gerado em:", geradoEm],
+      [`finia v${packageInfo.version}`],
+      [],
+      ["Resumo"],
+      ["Receitas", "Despesas", "Saldo"],
+      [totalIncome, totalExpenses, totalIncome - totalExpenses],
+      [],
+      ["Extrato Detalhado"],
+      ["Data", "Descrição", "Tipo", "Categoria", "Valor (R$)", "Status"],
+    ];
+
+    const dataRows = transactions.map(t => [
+      formatDate(t.date),
+      t.description,
+      t.type === "income" ? "Receita" : t.type === "expense" ? "Despesa" : "Transferência",
+      (t.category as { name: string } | null)?.name || "",
+      Number(t.amount),
+      t.status === "confirmed" ? "Confirmado" : "Pendente",
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([...headerRows, ...dataRows]);
+
+    // Largura das colunas
+    ws["!cols"] = [
+      { wch: 14 }, // Data
+      { wch: 40 }, // Descrição
+      { wch: 14 }, // Tipo
+      { wch: 20 }, // Categoria
+      { wch: 14 }, // Valor
+      { wch: 12 }, // Status
+    ];
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Transações");
-    XLSX.writeFile(wb, `relatorio-${startDate}-${endDate}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+    XLSX.writeFile(wb, `finia-relatorio-${appliedStart}-${appliedEnd}.xlsx`);
     toast.success("Excel exportado com sucesso!");
   };
 

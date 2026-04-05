@@ -105,12 +105,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </div>
 
         <div className="p-4 border-t border-border lg:block">
-          <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent">
+          <div className="px-3 py-2 rounded-lg bg-gradient-to-r from-[#534AB7]/10 to-transparent">
             <p className="text-xs text-muted-foreground">
-              Fluxo v{packageInfo.version}
+              finia v{packageInfo.version}
             </p>
             <p className="text-xs text-muted-foreground/60">
-              Cada real no lugar certo.
+              Suas finanças, simplificadas.
             </p>
           </div>
         </div>

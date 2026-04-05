@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 160" width="620" height="160">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;700&display=swap');
+    </style>
+  </defs>
+
+  <!-- Ícone: hexágono -->
+  <polygon
+    points="72,18 112,18 132,52 112,86 72,86 52,52"
+    fill="#EEEDFE"
+    stroke="#534AB7"
+    stroke-width="2"
+  />
+  <!-- Anel interno pontilhado -->
+  <polygon
+    points="72,28 106,28 123,52 106,76 72,76 55,52"
+    fill="none"
+    stroke="#AFA9EC"
+    stroke-width="0.8"
+    stroke-dasharray="3,2"
+  />
+  <!-- Linha de pulso -->
+  <polyline
+    points="57,52 68,52 75,36 83,68 90,42 98,52 127,52"
+    fill="none"
+    stroke="#534AB7"
+    stroke-width="2.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Nome -->
+  <text
+    x="152"
+    y="76"
+    font-family="'Space Grotesk', 'Arial Black', sans-serif"
+    font-weight="700"
+    font-size="62"
+    letter-spacing="-2"
+    fill="#26215C"
+  >finia</text>
+
+  <!-- Separador -->
+  <line x1="152" y1="100" x2="590" y2="100" stroke="#D3D1C7" stroke-width="0.75"/>
+  <!-- Losango decorativo -->
+  <polygon points="371,93 377,100 371,107 365,100" fill="#534AB7"/>
+
+  <!-- Slogan -->
+  <text
+    x="371"
+    y="122"
+    text-anchor="middle"
+    font-family="'Space Grotesk', Arial, sans-serif"
+    font-weight="300"
+    font-size="12"
+    letter-spacing="3.5"
+    fill="#888780"
+  >SUAS FINANÇAS, SIMPLIFICADAS.</text>
+</svg>

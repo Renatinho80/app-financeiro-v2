@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 120" width="380" height="120">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap');
+    </style>
+  </defs>
+  <text
+    x="190"
+    y="85"
+    text-anchor="middle"
+    font-family="'Space Grotesk', 'Arial Black', sans-serif"
+    font-weight="700"
+    font-size="80"
+    letter-spacing="-3"
+    fill="#26215C"
+  >finia</text>
+</svg>

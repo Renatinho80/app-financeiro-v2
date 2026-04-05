@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 80" width="520" height="80">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300&display=swap');
+    </style>
+  </defs>
+  <!-- Linha decorativa esquerda -->
+  <line x1="20" y1="40" x2="90" y2="40" stroke="#D3D1C7" stroke-width="1"/>
+  <!-- Losango decorativo central -->
+  <polygon points="260,33 266,40 260,47 254,40" fill="#534AB7"/>
+  <!-- Linha decorativa direita -->
+  <line x1="430" y1="40" x2="500" y2="40" stroke="#D3D1C7" stroke-width="1"/>
+  <!-- Slogan -->
+  <text
+    x="260"
+    y="28"
+    text-anchor="middle"
+    font-family="'Space Grotesk', Arial, sans-serif"
+    font-weight="300"
+    font-size="13"
+    letter-spacing="3"
+    fill="#888780"
+  >SUAS FINANÇAS, SIMPLIFICADAS.</text>
+</svg>
