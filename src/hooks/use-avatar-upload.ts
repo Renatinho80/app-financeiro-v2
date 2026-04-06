@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage, formatFileSize } from "@/lib/utils/image-compression";
+import {
+  validateMagicBytes,
+  validateFileSize,
+  ALLOWED_IMAGE_TYPES,
+  MAX_AVATAR_SIZE_BYTES,
+} from "@/lib/security/file-upload";
 import { toast } from "sonner";
 
 export function useAvatarUpload() {
@@ -13,9 +19,24 @@ export function useAvatarUpload() {
     try {
       setUploading(true);
 
-      // Validate file type
-      if (!file.type.startsWith("image/")) {
-        toast.error("Tipo de arquivo inválido", { description: "Por favor, selecione uma imagem." });
+      // 1. Valida tamanho
+      const sizeResult = validateFileSize(file.size, MAX_AVATAR_SIZE_BYTES);
+      if (!sizeResult.valid) {
+        toast.error("Arquivo muito grande", { description: sizeResult.error });
+        return null;
+      }
+
+      // 2. Valida MIME type declarado (primeira barreira)
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type as typeof ALLOWED_IMAGE_TYPES[number])) {
+        toast.error("Tipo de arquivo inválido", { description: "Formatos aceitos: JPEG, PNG, WebP ou GIF." });
+        return null;
+      }
+
+      // 3. Valida magic bytes reais (não depende do Content-Type declarado pelo cliente)
+      const headerBytes = await file.slice(0, 8).arrayBuffer();
+      const magicResult = validateMagicBytes(headerBytes, file.type);
+      if (!magicResult.valid) {
+        toast.error("Arquivo corrompido ou inválido", { description: magicResult.error });
         return null;
       }
 

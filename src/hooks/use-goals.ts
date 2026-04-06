@@ -33,7 +33,6 @@ export function useGoals() {
 
     if (error) {
       toast.error("Erro ao carregar metas", { description: error.message });
-      console.error(error);
     } else {
       setGoals(data as Goal[]);
     }

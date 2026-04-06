@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useTheme } from "next-themes";
 import { useAvatarUpload } from "@/hooks/use-avatar-upload";
+import { validatePasswordStrength } from "@/lib/security/password";
 import { AvatarUpload } from "@/components/profile/avatar-upload";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -100,8 +101,9 @@ export default function ConfiguracoesPage() {
   };
 
   const handleChangePassword = async () => {
-    if (newPassword.length < 6) {
-      toast.error("A senha deve ter pelo menos 6 caracteres");
+    const { valid, errors } = validatePasswordStrength(newPassword);
+    if (!valid) {
+      toast.error("Senha inválida", { description: errors.join(". ") });
       return;
     }
     setLoading(true);

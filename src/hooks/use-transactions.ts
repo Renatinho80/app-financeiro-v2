@@ -63,7 +63,6 @@ export function useTransactions() {
       _transaction_date: transactionDate,
     });
     if (error) {
-      console.error("Erro ao obter/criar fatura:", error.message);
       return null;
     }
     return data as string;

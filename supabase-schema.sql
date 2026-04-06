@@ -761,10 +761,18 @@ ALTER TABLE transactions ADD CONSTRAINT chk_installment_total_valid
 -- Storage: Avatars (Fotos de Perfil)
 -- ============================================================
 
--- Criar bucket de avatars (público para leitura)
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('avatars', 'avatars', true)
-ON CONFLICT (id) DO NOTHING;
+-- Criar bucket de avatars (público para leitura, com limites de segurança)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'avatars',
+  'avatars',
+  true,
+  5242880,  -- 5MB em bytes
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO UPDATE SET
+  file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- Política: qualquer um pode ler avatars publicamente
 DROP POLICY IF EXISTS "Public Read Avatars" ON storage.objects;
@@ -776,6 +784,19 @@ CREATE POLICY "Public Read Avatars"
 DROP POLICY IF EXISTS "User Upload Own Avatar" ON storage.objects;
 CREATE POLICY "User Upload Own Avatar"
   ON storage.objects FOR INSERT
+  WITH CHECK (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- Política: usuário pode atualizar (upsert) apenas seu próprio avatar
+DROP POLICY IF EXISTS "User Update Own Avatar" ON storage.objects;
+CREATE POLICY "User Update Own Avatar"
+  ON storage.objects FOR UPDATE
+  USING (
+    bucket_id = 'avatars'
+    AND auth.uid()::text = (storage.foldername(name))[1]
+  )
   WITH CHECK (
     bucket_id = 'avatars'
     AND auth.uid()::text = (storage.foldername(name))[1]
