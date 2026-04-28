@@ -138,7 +138,7 @@ export default function CategoriasPage() {
                   <Badge variant="secondary" className="text-xs">{cat.subcategories.length} sub</Badge>
                 )}
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCreate(type, cat.id)} title="Adicionar subcategoria">
                   <Plus className="w-3.5 h-3.5" />
                 </Button>
@@ -162,7 +162,7 @@ export default function CategoriasPage() {
                       <ChevronRight className="w-3 h-3 text-muted-foreground" />
                       <span className="text-sm">{sub.icon} {sub.name}</span>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(sub)}>
                         <Pencil className="w-3 h-3" />
                       </Button>

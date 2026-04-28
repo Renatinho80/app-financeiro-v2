@@ -178,7 +178,7 @@ export default function MetasPage() {
                     </div>
                   </div>
                 </CardContent>
-                <CardFooter className="pt-2 border-t bg-muted/20 opacity-0 group-hover:opacity-100 transition-opacity justify-end gap-2">
+                <CardFooter className="pt-2 border-t bg-muted/20 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity justify-end gap-2">
                   <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openEdit(goal)}>
                     <Pencil className="w-3.5 h-3.5 mr-1" /> Editar
                   </Button>

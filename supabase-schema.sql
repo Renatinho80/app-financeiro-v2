@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   avatar_url TEXT,
   currency TEXT DEFAULT 'BRL',
   locale TEXT DEFAULT 'pt-BR',
+  spending_limit NUMERIC(15,2),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

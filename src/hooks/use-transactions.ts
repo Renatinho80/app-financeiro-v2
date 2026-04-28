@@ -52,7 +52,8 @@ export function useTransactions() {
     setLoading(false);
   }, []);
 
-  // Helper: resolve invoice_id for credit card transactions
+  // Helper: resolve invoice_id for credit card transactions.
+  // Returns null and shows a toast if the RPC fails — caller must check.
   const resolveInvoiceId = async (
     supabase: ReturnType<typeof createClient>,
     creditCardId: string,
@@ -63,6 +64,7 @@ export function useTransactions() {
       _transaction_date: transactionDate,
     });
     if (error) {
+      toast.error("Erro ao vincular fatura", { description: error.message });
       return null;
     }
     return data as string;
@@ -86,10 +88,11 @@ export function useTransactions() {
         const installmentDate = addMonths(dateObj, i - 1);
         const installmentDateStr = format(installmentDate, "yyyy-MM-dd");
 
-        // Resolve invoice for each installment if using credit card
+        // Resolve invoice for each installment — abort all if any fails
         let invoiceId: string | null = null;
         if (txData.credit_card_id) {
           invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, installmentDateStr);
+          if (invoiceId === null) return false;
         }
 
         txs.push({
@@ -159,10 +162,11 @@ export function useTransactions() {
     }
     // Single transaction
     else {
-      // Resolve invoice if using credit card
+      // Resolve invoice if using credit card — abort if resolution fails
       let invoiceId: string | null = null;
       if (txData.credit_card_id) {
         invoiceId = await resolveInvoiceId(supabase, txData.credit_card_id, txData.date);
+        if (invoiceId === null) return false;
       }
 
       const { error, data: newTx } = await supabase

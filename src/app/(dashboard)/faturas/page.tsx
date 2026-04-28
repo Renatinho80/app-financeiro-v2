@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils/format";
-import { Receipt, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronUp, RotateCcw, TrendingUp } from "lucide-react";
+import { Receipt, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronUp, RotateCcw, TrendingUp, XCircle } from "lucide-react";
 import type { Transaction } from "@/types";
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
@@ -27,12 +27,19 @@ export default function FaturasPage() {
   const { accounts } = useAccounts();
   const [selectedCard, setSelectedCard] = useState<string | undefined>();
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>();
-  const { invoices, loading, markAsPaid, reopenInvoice } = useInvoices(selectedCard);
+  const { invoices, loading, markAsPaid, reopenInvoice, closeInvoice, autoAdvanceInvoices, getReopenedIds } = useInvoices(selectedCard);
   const [payingId, setPayingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [invoiceTransactions, setInvoiceTransactions] = useState<Transaction[]>([]);
   const [loadingTxs, setLoadingTxs] = useState(false);
+  const [reopenedIds, setReopenedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    autoAdvanceInvoices();
+    setReopenedIds(getReopenedIds());
+  }, []);
 
   const toggleExpand = async (invoiceId: string) => {
     if (expandedId === invoiceId) {
@@ -128,6 +135,17 @@ export default function FaturasPage() {
                         >
                           <CheckCircle2 className="w-4 h-4 mr-1" />
                           Pagar
+                        </Button>
+                      )}
+                      {invoice.status === "open" && reopenedIds.has(invoice.id) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-orange-500 border-orange-500/30 hover:bg-orange-500/10"
+                          onClick={() => setClosingId(invoice.id)}
+                        >
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Fechar
                         </Button>
                       )}
                       {invoice.status !== "open" && (
@@ -274,11 +292,50 @@ export default function FaturasPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reabrir fatura?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação irá alterar o status da fatura novamente para Aberta e remover a data de pagamento, caso exista.</AlertDialogDescription>
+            <AlertDialogDescription>
+              A fatura voltará ao status <strong>Aberta</strong>. Ela <strong>não será fechada automaticamente</strong> — você precisará clicar em "Fechar" manualmente.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (reopeningId) { await reopenInvoice(reopeningId); setReopeningId(null); } }} className="bg-blue-600 text-white hover:bg-blue-700">Reabrir</AlertDialogAction>
+            <AlertDialogAction
+              onClick={async () => {
+                if (reopeningId) {
+                  await reopenInvoice(reopeningId);
+                  setReopenedIds(getReopenedIds());
+                  setReopeningId(null);
+                }
+              }}
+              className="bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Reabrir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!closingId} onOpenChange={(open) => !open && setClosingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Fechar fatura?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A fatura será marcada como <strong>Fechada</strong>. Para pagá-la depois, use o botão "Pagar".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (closingId) {
+                  await closeInvoice(closingId);
+                  setReopenedIds(getReopenedIds());
+                  setClosingId(null);
+                }
+              }}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              Fechar Fatura
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

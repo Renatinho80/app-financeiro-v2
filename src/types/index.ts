@@ -10,6 +10,7 @@ export type Profile = {
   currency: string;
   locale: string;
   created_at: string;
+  spending_limit: number | null;
 };
 
 export type AccountType = "checking" | "savings" | "wallet";

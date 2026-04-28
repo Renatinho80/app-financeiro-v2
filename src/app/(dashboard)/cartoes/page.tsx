@@ -144,7 +144,7 @@ export default function CartoesPage() {
                     </>
                   );
                 })()}
-                <div className="flex gap-1 justify-end opacity-40 hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 justify-end opacity-40 hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(card); setIsDialogOpen(true); }}>
                     <Pencil className="w-4 h-4" />
                   </Button>

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency, formatDate } from "@/lib/utils/format";
 import { cn } from "@/lib/utils";
-import { FileDown, FileSpreadsheet, Upload, BarChart3, ChevronDown, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight } from "lucide-react";
+import { FileDown, FileSpreadsheet, Upload, BarChart3, ChevronDown, ArrowUpDown, ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, FileCheck, AlertCircle } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -57,6 +57,7 @@ export default function RelatoriosPage() {
   const [importProgress, setImportProgress] = useState(0);
   const [isImporting, setIsImporting] = useState(false);
   const [totalRowsToImport, setTotalRowsToImport] = useState(0);
+  const [csvTotalRows, setCsvTotalRows] = useState(0);
   const [importResults, setImportResults] = useState<{
     success: number;
     errors: number;
@@ -324,6 +325,7 @@ export default function RelatoriosPage() {
           json = json.slice(1);
         }
         
+        setCsvTotalRows(json.length > 1 ? json.length - 1 : 0);
         setCsvPreview(json.slice(0, 6).map(row => (row || []).map(v => String(v || ""))));
       };
       reader.readAsArrayBuffer(file);
@@ -341,6 +343,7 @@ export default function RelatoriosPage() {
           return (headerLine.split(curr).length > headerLine.split(prev).length) ? curr : prev;
         });
 
+        setCsvTotalRows(allLines.length > 1 ? allLines.length - 1 : 0);
         const lines = allLines.map(line => line.split(separator).map(c => c.trim()));
         setCsvPreview(lines.slice(0, 6));
       };
@@ -900,6 +903,7 @@ export default function RelatoriosPage() {
         if (!open) {
           setCsvFile(null);
           setCsvPreview([]);
+          setCsvTotalRows(0);
           setImportTargetType("");
           setImportTargetId("");
           setImportProgress(0);
@@ -1030,12 +1034,25 @@ export default function RelatoriosPage() {
               </div>
             )}
 
+            {csvTotalRows > 0 && (
+              <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${csvTotalRows > MAX_IMPORT_ROWS ? "bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-900 dark:text-red-400" : "bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-900 dark:text-emerald-400"}`}>
+                {csvTotalRows > MAX_IMPORT_ROWS
+                  ? <AlertCircle className="w-4 h-4 shrink-0" />
+                  : <FileCheck className="w-4 h-4 shrink-0" />}
+                <span>
+                  {csvTotalRows > MAX_IMPORT_ROWS
+                    ? `${csvTotalRows.toLocaleString("pt-BR")} linhas encontradas — acima do limite de ${MAX_IMPORT_ROWS.toLocaleString("pt-BR")}. Divida o arquivo em partes.`
+                    : `${csvTotalRows.toLocaleString("pt-BR")} linha${csvTotalRows !== 1 ? "s" : ""} pronta${csvTotalRows !== 1 ? "s" : ""} para importação.`}
+                </span>
+              </div>
+            )}
+
             <div className="flex gap-3 pt-2">
               <Button variant="ghost" className="flex-1" onClick={() => setIsImportOpen(false)}>Cancelar</Button>
-              <Button 
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" 
-                onClick={importCsv} 
-                disabled={!csvFile || !importTargetId}
+              <Button
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={importCsv}
+                disabled={!csvFile || !importTargetId || csvTotalRows > MAX_IMPORT_ROWS}
               >
                 Iniciar Importação
               </Button>

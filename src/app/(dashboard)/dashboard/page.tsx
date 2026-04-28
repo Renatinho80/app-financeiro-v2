@@ -7,9 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { formatCurrency, formatDate, formatShortMonth } from "@/lib/utils/format";
 import { CHART_COLORS } from "@/lib/utils/constants";
-import { TrendingUp, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, CreditCard, AlertTriangle, Sparkles } from "lucide-react";
+import { TrendingUp, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, CreditCard, AlertTriangle, Sparkles, ShieldAlert, X, Pencil, Trash2, Loader2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, differenceInDays, parseISO } from "date-fns";
 import Link from "next/link";
@@ -34,6 +39,16 @@ export default function DashboardPage() {
   const [upcomingInvoices, setUpcomingInvoices] = useState<UpcomingInvoice[]>([]);
   const [budgetAlerts, setBudgetAlerts] = useState<{ name: string; icon: string | null; pct: number; spent: number; budget: number }[]>([]);
   const [refetchCounter, setRefetchCounter] = useState(0);
+  const [dismissedInvoiceIds, setDismissedInvoiceIds] = useState<Set<string>>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("dismissed_upcoming_invoices") : null;
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  const [spendingLimit, setSpendingLimit] = useState<number | null>(null);
+  const [isLimitDialogOpen, setIsLimitDialogOpen] = useState(false);
+  const [limitInput, setLimitInput] = useState("");
+  const [savingLimit, setSavingLimit] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -62,22 +77,23 @@ export default function DashboardPage() {
         { data: invoicesData },
         { data: creditCardTxns },
         { data: budgetsData },
+        { data: profileData },
       ] = await Promise.all([
         // 1. Saldo das contas ativas
         supabase.from("accounts").select("balance").eq("user_id", user.id).eq("is_active", true),
 
-        // 2. Todas receitas+despesas dos últimos 6 meses (cobre gráfico + resumo do mês)
+        // 2. Todas receitas+despesas dos últimos 6 meses — inclui pending (exclui só cancelled)
         supabase.from("transactions").select("amount, type, date")
-          .eq("user_id", user.id).eq("status", "confirmed")
+          .eq("user_id", user.id).neq("status", "cancelled")
           .in("type", ["income", "expense"])
           .gte("date", rangeStart).lte("date", end),
 
         // 3. Dívida total em faturas abertas/fechadas
         supabase.from("invoices").select("total_amount").eq("user_id", user.id).in("status", ["open", "closed"]),
 
-        // 4. Despesas por categoria (mês selecionado, com join)
+        // 4. Despesas por categoria (mês selecionado, com join) — inclui pending
         supabase.from("transactions").select("amount, category_id, category:categories(name, color)")
-          .eq("user_id", user.id).eq("type", "expense").eq("status", "confirmed")
+          .eq("user_id", user.id).eq("type", "expense").neq("status", "cancelled")
           .gte("date", start).lte("date", end),
 
         // 5. Últimas transações
@@ -102,6 +118,9 @@ export default function DashboardPage() {
           .select("amount, category_id, category:categories(name, icon)")
           .eq("user_id", user.id)
           .eq("month", `${format(selectedDate, "yyyy-MM")}-01`),
+
+        // 9. Limite de gastos personalizado
+        supabase.from("profiles").select("spending_limit").eq("id", user.id).maybeSingle(),
       ]);
 
       // Saldo bancário
@@ -178,6 +197,7 @@ export default function DashboardPage() {
         setBudgetAlerts([]);
       }
 
+      setSpendingLimit((profileData as any)?.spending_limit ?? null);
       setRecentTransactions(recent || []);
 
       const rawInvoices = (invoicesData as (UpcomingInvoice & { credit_card: UpcomingInvoice["credit_card"] | UpcomingInvoice["credit_card"][] })[]) || [];
@@ -221,6 +241,31 @@ export default function DashboardPage() {
     const interval = setInterval(checkCacheChanges, 1000);
     return () => clearInterval(interval);
   }, [cache]);  
+
+  const maskCurrency = (raw: string): string => {
+    const digits = raw.replace(/\D/g, "");
+    if (!digits) return "";
+    return (parseInt(digits, 10) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const parseCurrency = (masked: string): number =>
+    parseFloat(masked.replace(/\./g, "").replace(",", ".")) || 0;
+
+  const saveSpendingLimit = async (value: number | null) => {
+    setSavingLimit(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setSavingLimit(false); return; }
+    const { error } = await supabase.from("profiles").update({ spending_limit: value } as any).eq("id", user.id);
+    if (error) {
+      toast.error("Erro ao salvar limite", { description: error.message });
+    } else {
+      setSpendingLimit(value);
+      toast.success(value === null ? "Limite de gastos removido" : "Limite de gastos definido!");
+      setIsLimitDialogOpen(false);
+    }
+    setSavingLimit(false);
+  };
 
   // Generate Insight
   const getInsight = () => {
@@ -295,12 +340,28 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <Select value={selectedMonth} onValueChange={(v) => v && setSelectedMonth(v)}>
-          <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {monthOptions.map(o => <SelectItem key={o.value} value={o.value} className="capitalize">{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setLimitInput(spendingLimit !== null
+                ? spendingLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : "");
+              setIsLimitDialogOpen(true);
+            }}
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span className="hidden sm:inline">{spendingLimit !== null ? "Editar Limite" : "Definir Limite"}</span>
+          </Button>
+          <Select value={selectedMonth} onValueChange={(v) => v && setSelectedMonth(v)}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {monthOptions.map(o => <SelectItem key={o.value} value={o.value} className="capitalize">{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Insights */}
@@ -322,6 +383,78 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Spending Limit Banner */}
+      {spendingLimit !== null && (() => {
+        const pct = Math.min((summary.monthExpenses / spendingLimit) * 100, 999);
+        const pctDisplay = Math.min(pct, 100);
+        const pctLabel = pct.toFixed(1);
+        const isOver = pct >= 100;
+        const isWarning = pct >= 80;
+        const isAttention = pct >= 50;
+
+        const colors = isOver
+          ? { border: "border-red-500/30", bg: "from-red-500/10", icon: "bg-red-500/20 text-red-500", bar: "bg-red-500", text: "text-red-500" }
+          : isWarning
+          ? { border: "border-amber-500/30", bg: "from-amber-500/10", icon: "bg-amber-500/20 text-amber-500", bar: "bg-amber-500", text: "text-amber-500" }
+          : isAttention
+          ? { border: "border-yellow-500/30", bg: "from-yellow-500/10", icon: "bg-yellow-500/20 text-yellow-500", bar: "bg-yellow-500", text: "text-yellow-500" }
+          : { border: "border-emerald-500/30", bg: "from-emerald-500/10", icon: "bg-emerald-500/20 text-emerald-500", bar: "bg-emerald-500", text: "text-emerald-500" };
+
+        const message = isOver
+          ? `Atenção! Você ultrapassou o limite mensal — gastou ${pctLabel}% do valor definido.`
+          : isWarning
+          ? `Cuidado: você já consumiu ${pctLabel}% do limite mensal.`
+          : isAttention
+          ? `Fique atento: ${pctLabel}% do limite mensal já foi utilizado.`
+          : `Tudo bem! Você usou ${pctLabel}% do limite mensal.`;
+
+        return (
+          <Card className={`border ${colors.border} bg-gradient-to-r ${colors.bg} to-transparent relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl" />
+            <CardContent className="p-4 sm:p-6 space-y-3">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className={`p-3 rounded-xl shrink-0 ${colors.icon}`}>
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm">Limite de Gastos Mensal</h3>
+                  <p className={`text-sm mt-0.5 ${colors.text}`}>{message}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <p className={`text-2xl font-bold ${colors.text}`}>{pctLabel}%</p>
+                  <p className="text-xs text-muted-foreground">{formatCurrency(summary.monthExpenses)} / {formatCurrency(spendingLimit)}</p>
+                  <div className="flex gap-1 mt-0.5">
+                    <button
+                      className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                      title="Editar limite"
+                      onClick={() => {
+                        setLimitInput(spendingLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+                        setIsLimitDialogOpen(true);
+                      }}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+                      title="Remover limite"
+                      onClick={() => saveSpendingLimit(null)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${colors.bar}`}
+                  style={{ width: `${pctDisplay}%` }}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -377,41 +510,59 @@ export default function DashboardPage() {
       </div>
 
       {/* Upcoming Invoices Alert */}
-      {upcomingInvoices.length > 0 && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              Faturas Próximas do Vencimento
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {upcomingInvoices.map(invoice => {
-                const daysUntil = differenceInDays(parseISO(invoice.due_date), new Date());
-                const cardData = invoice.credit_card as { name: string; color: string | null } | undefined;
-                const isUrgent = daysUntil <= 5;
-                return (
-                  <div key={invoice.id} className={`flex items-center gap-3 p-3 rounded-xl border ${isUrgent ? "border-red-500/30 bg-red-500/5" : "border-amber-500/20 bg-background"}`}>
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isUrgent ? "bg-red-500/10" : "bg-amber-500/10"}`}>
-                      <CreditCard className={`w-5 h-5 ${isUrgent ? "text-red-500" : "text-amber-500"}`} />
+      {(() => {
+        const visible = upcomingInvoices.filter(inv => !dismissedInvoiceIds.has(inv.id));
+        if (!visible.length) return null;
+        const dismissAll = () => {
+          const next = new Set([...dismissedInvoiceIds, ...visible.map(inv => inv.id)]);
+          setDismissedInvoiceIds(next);
+          localStorage.setItem("dismissed_upcoming_invoices", JSON.stringify([...next]));
+        };
+        return (
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" />
+                  Faturas Próximas do Vencimento
+                </CardTitle>
+                <button
+                  onClick={dismissAll}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                  aria-label="Fechar alerta"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {visible.map(invoice => {
+                  const daysUntil = differenceInDays(parseISO(invoice.due_date), new Date());
+                  const cardData = invoice.credit_card as { name: string; color: string | null } | undefined;
+                  const isUrgent = daysUntil <= 5;
+                  return (
+                    <div key={invoice.id} className={`flex items-center gap-3 p-3 rounded-xl border ${isUrgent ? "border-red-500/30 bg-red-500/5" : "border-amber-500/20 bg-background"}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isUrgent ? "bg-red-500/10" : "bg-amber-500/10"}`}>
+                        <CreditCard className={`w-5 h-5 ${isUrgent ? "text-red-500" : "text-amber-500"}`} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{cardData?.name || "Cartão"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Vence em <strong className={isUrgent ? "text-red-500" : "text-amber-500"}>
+                            {daysUntil} {daysUntil === 1 ? "dia" : "dias"}
+                          </strong>
+                        </p>
+                      </div>
+                      <span className="text-sm font-bold shrink-0">{formatCurrency(Number(invoice.total_amount))}</span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{cardData?.name || "Cartão"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Vence em <strong className={isUrgent ? "text-red-500" : "text-amber-500"}>
-                          {daysUntil} {daysUntil === 1 ? "dia" : "dias"}
-                        </strong>
-                      </p>
-                    </div>
-                    <span className="text-sm font-bold shrink-0">{formatCurrency(Number(invoice.total_amount))}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -618,6 +769,53 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+      {/* Spending Limit Dialog */}
+      <Dialog open={isLimitDialogOpen} onOpenChange={setIsLimitDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-emerald-500" />
+              {spendingLimit !== null ? "Editar Limite de Gastos" : "Definir Limite de Gastos"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              Defina um valor máximo de gastos mensais. Apenas um limite geral é permitido por conta.
+            </p>
+            <div className="space-y-2">
+              <Label>Valor do Limite (R$)</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">R$</span>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={limitInput}
+                  onChange={e => setLimitInput(maskCurrency(e.target.value))}
+                  placeholder="0,00"
+                  className="pl-9"
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && limitInput) saveSpendingLimit(parseCurrency(limitInput));
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setIsLimitDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={!limitInput || savingLimit}
+                onClick={() => saveSpendingLimit(parseCurrency(limitInput))}
+              >
+                {savingLimit && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

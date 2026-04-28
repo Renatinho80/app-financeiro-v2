@@ -294,7 +294,7 @@ export default function OrcamentosPage() {
                         <span className={`text-xs ${status.className}`}>{status.text}</span>
                       </div>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0">
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity shrink-0">
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
                         onClick={() => openEdit(item)}>
                         <Pencil className="w-3.5 h-3.5" />
