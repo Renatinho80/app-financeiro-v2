@@ -507,7 +507,12 @@ BEGIN
 
     -- Se encontrou mas não está aberta: bloquear (exceto em imports históricos)
     IF _invoice_id IS NOT NULL AND _status != 'open' AND NOT _ignore_closed THEN
-      RAISE EXCEPTION 'A fatura selecionada está % e não permite novos lançamentos. Reabra-a na tela de faturas para continuar.', _status;
+      RAISE EXCEPTION 'A fatura selecionada está % e não permite novos lançamentos. Reabra-a na tela de faturas para continuar.',
+        CASE _status
+          WHEN 'paid'   THEN 'paga'
+          WHEN 'closed' THEN 'fechada'
+          ELSE _status
+        END;
     END IF;
 
     -- Se não encontrou, criar
@@ -811,3 +816,119 @@ CREATE POLICY "User Delete Own Avatar"
     bucket_id = 'avatars'
     AND auth.uid()::text = (storage.foldername(name))[1]
   );
+
+-- ============================================================
+-- Job: Sincronização automática de faturas para recorrentes
+-- Executa no 1º de cada mês via pg_cron.
+-- Localiza transações recorrentes sem invoice_id dentro do
+-- horizonte de 35 dias e cria/vincula a fatura correspondente.
+-- Pré-requisito: habilitar pg_cron em Supabase Dashboard →
+--   Database → Extensions → pg_cron
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.sync_recurring_invoices()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  tx            RECORD;
+  _closing_day  INT;
+  _due_day      INT;
+  _ref_month    DATE;
+  _closing_date DATE;
+  _due_date     DATE;
+  _invoice_id   UUID;
+  _status       TEXT;
+  _count        INT := 0;
+BEGIN
+  -- Processa recorrentes sem fatura cujas datas caem entre o início do mês
+  -- atual e os próximos 35 dias (garante cobertura do mês seguinte inteiro).
+  FOR tx IN
+    SELECT t.id, t.user_id, t.credit_card_id, t.date
+    FROM transactions t
+    WHERE t.is_recurring = TRUE
+      AND t.invoice_id IS NULL
+      AND t.credit_card_id IS NOT NULL
+      AND t.date <= (CURRENT_DATE + INTERVAL '35 days')
+  LOOP
+    SELECT closing_day, due_day INTO _closing_day, _due_day
+    FROM credit_cards
+    WHERE id = tx.credit_card_id AND user_id = tx.user_id;
+
+    IF NOT FOUND THEN CONTINUE; END IF;
+
+    -- Determina mês de referência (mesma lógica de get_or_create_invoice)
+    IF _due_day < _closing_day THEN
+      IF EXTRACT(DAY FROM tx.date) <= _closing_day THEN
+        _ref_month := DATE_TRUNC('month', tx.date) + INTERVAL '1 month';
+      ELSE
+        _ref_month := DATE_TRUNC('month', tx.date) + INTERVAL '2 months';
+      END IF;
+    ELSE
+      IF EXTRACT(DAY FROM tx.date) <= _closing_day THEN
+        _ref_month := DATE_TRUNC('month', tx.date);
+      ELSE
+        _ref_month := DATE_TRUNC('month', tx.date) + INTERVAL '1 month';
+      END IF;
+    END IF;
+
+    -- Calcula data de fechamento
+    IF _due_day < _closing_day THEN
+      _closing_date := (_ref_month - INTERVAL '1 month') +
+        (LEAST(_closing_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month - INTERVAL '1 month') + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+    ELSE
+      _closing_date := DATE_TRUNC('month', _ref_month) +
+        (LEAST(_closing_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month) + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+    END IF;
+    _closing_date := public.get_next_business_day(_closing_date);
+
+    -- Calcula data de vencimento
+    _due_date := _ref_month +
+      (LEAST(_due_day, EXTRACT(DAY FROM (DATE_TRUNC('month', _ref_month) + INTERVAL '1 month' - INTERVAL '1 day'))::INT) - 1) * INTERVAL '1 day';
+    _due_date := public.get_next_business_day(_due_date);
+
+    -- Busca fatura existente para este cartão e mês de referência
+    SELECT id, status INTO _invoice_id, _status
+    FROM invoices
+    WHERE credit_card_id = tx.credit_card_id
+      AND user_id = tx.user_id
+      AND reference_month = _ref_month
+    LIMIT 1;
+
+    -- Não vincula a faturas fechadas/pagas automaticamente — requer ação manual
+    IF _invoice_id IS NOT NULL AND _status NOT IN ('open') THEN
+      CONTINUE;
+    END IF;
+
+    -- Cria fatura se não existir
+    IF _invoice_id IS NULL THEN
+      INSERT INTO invoices (credit_card_id, user_id, reference_month, closing_date, due_date, total_amount, status)
+      VALUES (tx.credit_card_id, tx.user_id, _ref_month, _closing_date, _due_date, 0, 'open')
+      RETURNING id INTO _invoice_id;
+    END IF;
+
+    UPDATE transactions SET invoice_id = _invoice_id WHERE id = tx.id;
+    _count := _count + 1;
+  END LOOP;
+
+  RETURN _count;
+END;
+$$;
+
+-- ============================================================
+-- pg_cron: Agendar execução no 1º de cada mês às 06:00 UTC
+-- Execute este bloco UMA VEZ após habilitar a extensão pg_cron.
+-- Para verificar jobs: SELECT * FROM cron.job;
+-- Para remover:        SELECT cron.unschedule('sync-recurring-invoices');
+-- ============================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    PERFORM cron.unschedule('sync-recurring-invoices');
+    PERFORM cron.schedule('sync-recurring-invoices', '0 6 1 * *', 'SELECT public.sync_recurring_invoices()');
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END;
+$$;

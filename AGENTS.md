@@ -4,6 +4,19 @@
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 
+## 🚨 Convenções desta versão — Breaking Changes confirmados
+
+### Middleware → Proxy
+- **PROIBIDO** criar ou recriar `src/middleware.ts` — a convenção foi renomeada.
+- O arquivo correto é **`src/proxy.ts`** com `export async function proxy(request: NextRequest)`.
+- O `export const config` com `matcher` permanece igual.
+- Qualquer lógica de middleware (auth, headers, redirects) deve estar em `src/proxy.ts`.
+
+### Documentação Local Obrigatória
+- Antes de qualquer alteração que envolva roteamento, middleware, APIs do Next.js ou convenções de arquivo, leia **`node_modules/next/dist/docs/`**.
+- Use `Glob` em `node_modules/next/dist/docs/**/*.md` para localizar o guia relevante.
+- **NUNCA** assuma que o comportamento é igual ao Next.js padrão do seu treinamento.
+
 # Next.js Custom Edition: Protocolo de Elite v2
 
 Este ambiente possui mudanças estruturais profundas. APIs e estruturas de arquivos divergem do seu treinamento padrão. Priorize a documentação local em `node_modules/next/dist/docs/`.
@@ -60,6 +73,25 @@ Estas operações SEMPRE devem ser paralelas (numa única mensagem de tool calls
 - Leitura de múltiplos arquivos independentes
 - `Grep` em múltiplos padrões sem dependência entre si
 - Leitura de arquivo + leitura de schema/tipos da mesma feature
+
+## 📋 Protocolo de Explicação Obrigatória
+
+Após **qualquer alteração**, você DEVE detalhar o que foi feito — sem exceções:
+
+- **Uma alteração:** descreva o arquivo, a linha e o motivo do change.
+- **Múltiplos módulos alterados:** liste **cada módulo separadamente** em seções distintas (ex: `### hook`, `### schema`, `### componente`), descrevendo o que mudou em cada um e por quê.
+- **Formato mínimo por módulo:** arquivo + linha(s) + causa + efeito da mudança.
+- **PROIBIDO** agrupar mudanças em módulos diferentes num único parágrafo genérico.
+
+## ✅ Protocolo de Auto-Validação
+
+Antes de declarar uma tarefa concluída, você DEVE validar o próprio código:
+
+1. **Consistência de tipos:** Confirme que não há `any` implícito, escape de tipo ou incompatibilidade com os tipos existentes (`Grep` nos `.d.ts` se necessário).
+2. **Cobertura de casos-limite:** Para cada branch lógico alterado, verifique: o que acontece com `null`, `undefined`, valor vazio e erro de rede.
+3. **Efeitos colaterais:** Verifique se outras funções que chamam o mesmo módulo são afetadas (`Grep` pelo símbolo alterado).
+4. **Regressão visual/funcional:** Se o change tocar UI ou fluxo de usuário, descreva explicitamente o caminho feliz e o caminho de erro após a mudança.
+5. **PROIBIDO** declarar "concluído" sem ter percorrido estes 4 passos.
 
 ## 🚫 Restrições Severas
 

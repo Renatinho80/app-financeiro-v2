@@ -1,17 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Bloqueia paths que tentam traversal de diretório
   const pathname = request.nextUrl.pathname;
-  if (pathname.includes("..") || pathname.includes("%2e%2e") || pathname.includes("%2F")) {
+  if (pathname.includes("..") || pathname.includes("%2e%2e")) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
   const response = await updateSession(request);
 
-  // Garante que headers de segurança estejam presentes mesmo em redirects do middleware
-  // (next.config.ts aplica em responses normais; aqui cobre redirects do middleware)
+  // Garante que headers de segurança estejam presentes mesmo em redirects
+  // (next.config.ts aplica em responses normais; aqui cobre redirects do proxy)
   if (response instanceof NextResponse) {
     response.headers.set("X-Content-Type-Options", "nosniff");
     response.headers.set("X-Frame-Options", "DENY");

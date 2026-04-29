@@ -15,8 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate, getTransactionTypeLabel, getTransactionStatusLabel } from "@/lib/utils/format";
-import { Plus, Search, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, Trash2, Copy, Download } from "lucide-react";
+import { Plus, Search, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, Trash2, Copy, Download, Filter, X } from "lucide-react";
 import type { Transaction, TransactionFilters } from "@/types";
+
+const today = new Date().toISOString().split("T")[0];
+const defaultFilters: TransactionFilters = { endDate: today };
 
 const typeColors: Record<string, string> = {
   income: "text-emerald-500",
@@ -33,21 +36,31 @@ const typeIcons: Record<string, React.ReactNode> = {
 };
 
 export default function TransacoesPage() {
-  const { transactions, loading, total, page, totalPages, pageSize, fetchTransactions, createTransaction, updateTransaction, deleteTransaction } = useTransactions();
+  const { transactions, loading, total, page, totalPages, pageSize, fetchTransactions, createTransaction, updateTransaction, deleteTransaction, setPage } = useTransactions();
   const { accounts } = useAccounts();
   const { creditCards } = useCreditCards();
   const { categories, allFlat } = useCategories();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deletingTx, setDeletingTx] = useState<Transaction | null>(null);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
-  const [filters, setFilters] = useState<TransactionFilters>({});
-  const [search, setSearch] = useState("");
+  const [editScope, setEditScope] = useState<"single" | "following" | "all">("single");
+  const [scopeDialogTx, setScopeDialogTx] = useState<Transaction | null>(null);
+
+  const [filters, setFilters] = useState<TransactionFilters>(defaultFilters);
+  const [draftFilters, setDraftFilters] = useState<TransactionFilters>(defaultFilters);
   const [pageInput, setPageInput] = useState("");
 
   useEffect(() => { fetchTransactions(filters, page); }, [fetchTransactions, filters, page]);
 
-  const handleSearch = () => {
-    setFilters(prev => ({ ...prev, search }));
+  const handleApplyFilters = () => {
+    setPage(1);
+    setFilters(draftFilters);
+  };
+
+  const handleResetFilters = () => {
+    setDraftFilters(defaultFilters);
+    setPage(1);
+    setFilters(defaultFilters);
   };
 
   const handlePageJump = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -63,26 +76,39 @@ export default function TransacoesPage() {
   const handleCreateOrUpdate = async (data: Parameters<typeof createTransaction>[0]) => {
     let success = false;
     if (editingTx) {
-      success = await updateTransaction(editingTx.id, data);
+      success = await updateTransaction(editingTx.id, data, editScope, editingTx);
     } else {
       success = await createTransaction(data);
     }
     if (success) {
       setIsFormOpen(false);
       setEditingTx(null);
+      setEditScope("single");
       fetchTransactions(filters, page);
     }
   };
 
   const handleEdit = (tx: Transaction) => {
-    setEditingTx(tx);
+    if (tx.is_installment || tx.is_recurring) {
+      setScopeDialogTx(tx);
+    } else {
+      setEditScope("single");
+      setEditingTx(tx);
+      setIsFormOpen(true);
+    }
+  };
+
+  const confirmEditScope = (scope: "single" | "following" | "all") => {
+    if (!scopeDialogTx) return;
+    setEditScope(scope);
+    setEditingTx(scopeDialogTx);
+    setScopeDialogTx(null);
     setIsFormOpen(true);
   };
 
-  const handleDelete = async () => {
+  const handleDelete = async (scope: "single" | "following" | "all") => {
     if (!deletingTx) return;
-    const isGroup = deletingTx.is_recurring || deletingTx.is_installment;
-    await deleteTransaction(deletingTx.id);
+    await deleteTransaction(deletingTx.id, scope, deletingTx);
     setDeletingTx(null);
     fetchTransactions(filters, page);
   };
@@ -104,30 +130,36 @@ export default function TransacoesPage() {
       {/* Filters */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
+          <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[160px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por descrição..."
                 className="pl-10"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleSearch()}
+                value={draftFilters.search || ""}
+                onChange={e => setDraftFilters(prev => ({ ...prev, search: e.target.value || undefined }))}
+                onKeyDown={e => e.key === "Enter" && handleApplyFilters()}
               />
             </div>
-            <Select value={filters.type || "all"} onValueChange={v => setFilters(prev => ({ ...prev, type: v === "all" ? undefined : v as TransactionFilters["type"] }))}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <Select
+              value={draftFilters.type ?? null}
+              onValueChange={v => setDraftFilters(prev => ({ ...prev, type: v ?? undefined }))}
+              items={{ income: "Receita", expense: "Despesa", transfer: "Transferência" }}
+            >
+              <SelectTrigger className="w-40"><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
                 <SelectItem value="income">Receita</SelectItem>
                 <SelectItem value="expense">Despesa</SelectItem>
                 <SelectItem value="transfer">Transferência</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={filters.status || "all"} onValueChange={v => setFilters(prev => ({ ...prev, status: v === "all" ? undefined : v as TransactionFilters["status"] }))}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+            <Select
+              value={draftFilters.status ?? null}
+              onValueChange={v => setDraftFilters(prev => ({ ...prev, status: v ?? undefined }))}
+              items={{ confirmed: "Confirmado", pending: "Pendente" }}
+            >
+              <SelectTrigger className="w-40"><SelectValue placeholder="Todos os status" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="confirmed">Confirmado</SelectItem>
                 <SelectItem value="pending">Pendente</SelectItem>
               </SelectContent>
@@ -135,17 +167,23 @@ export default function TransacoesPage() {
             <Input
               type="date"
               className="w-full sm:w-auto"
-              value={filters.startDate || ""}
-              onChange={e => setFilters(prev => ({ ...prev, startDate: e.target.value || undefined }))}
+              value={draftFilters.startDate || ""}
+              onChange={e => setDraftFilters(prev => ({ ...prev, startDate: e.target.value || undefined }))}
               title="Data inicial"
             />
             <Input
               type="date"
               className="w-full sm:w-auto"
-              value={filters.endDate || ""}
-              onChange={e => setFilters(prev => ({ ...prev, endDate: e.target.value || undefined }))}
+              value={draftFilters.endDate || ""}
+              onChange={e => setDraftFilters(prev => ({ ...prev, endDate: e.target.value || undefined }))}
               title="Data final"
             />
+            <Button onClick={handleApplyFilters} className="gap-2">
+              <Filter className="w-4 h-4" /> Aplicar
+            </Button>
+            <Button variant="outline" onClick={handleResetFilters} className="gap-2">
+              <X className="w-4 h-4" /> Limpar
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -275,19 +313,46 @@ export default function TransacoesPage() {
       </Dialog>
 
       {/* Delete confirmation */}
+      {/* Delete dialog */}
       <AlertDialog open={!!deletingTx} onOpenChange={(open) => !open && setDeletingTx(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir transação?</AlertDialogTitle>
             <AlertDialogDescription>
               {deletingTx?.is_recurring || deletingTx?.is_installment
-                ? "Esta transação faz parte de um grupo. Deseja excluir apenas esta ou todas?"
+                ? "Esta transação faz parte de um grupo. Escolha o que deseja excluir:"
                 : "Essa ação não pode ser desfeita."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className={deletingTx?.is_recurring || deletingTx?.is_installment ? "flex-col sm:flex-col gap-2" : ""}>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-white hover:bg-destructive/90">Excluir</AlertDialogAction>
+            {deletingTx?.is_recurring || deletingTx?.is_installment ? (
+              <>
+                <AlertDialogAction onClick={() => handleDelete("single")} className="bg-destructive text-white hover:bg-destructive/90">Somente esta</AlertDialogAction>
+                <AlertDialogAction onClick={() => handleDelete("following")} className="bg-destructive text-white hover:bg-destructive/90">Esta e as seguintes</AlertDialogAction>
+                <AlertDialogAction onClick={() => handleDelete("all")} className="bg-destructive text-white hover:bg-destructive/90">Todas (incluindo anteriores)</AlertDialogAction>
+              </>
+            ) : (
+              <AlertDialogAction onClick={() => handleDelete("single")} className="bg-destructive text-white hover:bg-destructive/90">Excluir</AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit scope dialog */}
+      <AlertDialog open={!!scopeDialogTx} onOpenChange={(open) => { if (!open) { setScopeDialogTx(null); setEditScope("single"); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Editar transação</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta transação faz parte de um grupo. O que deseja editar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-col gap-2">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmEditScope("single")}>Somente esta</AlertDialogAction>
+            <AlertDialogAction onClick={() => confirmEditScope("following")}>Esta e as seguintes</AlertDialogAction>
+            <AlertDialogAction onClick={() => confirmEditScope("all")}>Todas</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

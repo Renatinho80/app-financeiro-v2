@@ -196,8 +196,46 @@ export function useTransactions() {
     return true;
   };
 
-  const updateTransaction = async (id: string, data: Partial<TransactionFormData>) => {
+  const updateTransaction = async (
+    id: string,
+    data: Partial<TransactionFormData>,
+    scope: "single" | "following" | "all" = "single",
+    groupTx?: Pick<Transaction, "is_installment" | "is_recurring" | "installment_group_id" | "recurrence_group_id" | "installment_number" | "date">
+  ) => {
     const supabase = createClient();
+
+    // Converting to installments requires N rows — a plain UPDATE can't do this.
+    // Strip existing "(N/M)" suffix so createTransaction doesn't double-append it.
+    // Respect scope for group deletions (following/all).
+    if (data.is_installment && data.installment_total && data.installment_total > 1) {
+      const cleanData = {
+        ...data,
+        description: (data.description ?? "").replace(/\s*\(\d+\/\d+\)$/, ""),
+      };
+
+      let deleteError;
+      if (groupTx?.installment_group_id) {
+        if (scope === "all") {
+          ({ error: deleteError } = await supabase.from("transactions").delete()
+            .eq("installment_group_id", groupTx.installment_group_id));
+        } else if (scope === "following" && groupTx.installment_number !== null) {
+          ({ error: deleteError } = await supabase.from("transactions").delete()
+            .eq("installment_group_id", groupTx.installment_group_id)
+            .gte("installment_number", groupTx.installment_number!));
+        } else {
+          ({ error: deleteError } = await supabase.from("transactions").delete().eq("id", id));
+        }
+      } else {
+        ({ error: deleteError } = await supabase.from("transactions").delete().eq("id", id));
+      }
+
+      if (deleteError) {
+        toast.error("Erro ao converter para parcelado", { description: deleteError.message });
+        return false;
+      }
+      return createTransaction(cleanData as TransactionFormData);
+    }
+
     const { tag_ids, ...txData } = data;
 
     // Sincroniza invoice_id quando o cartão de crédito ou a data são alterados.
@@ -217,16 +255,43 @@ export function useTransactions() {
       if (effectiveCardId && effectiveDate) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          updatePayload.invoice_id = await resolveInvoiceId(supabase, effectiveCardId, effectiveDate);
+          const resolvedId = await resolveInvoiceId(supabase, effectiveCardId, effectiveDate);
+          if (resolvedId === null) return false;
+          updatePayload.invoice_id = resolvedId;
         }
       } else if (effectiveCardId === null || effectiveCardId === undefined) {
         updatePayload.invoice_id = null;
       }
     }
 
-    const { error } = await supabase.from("transactions").update(updatePayload).eq("id", id);
-    if (error) {
-      toast.error("Erro ao atualizar transação", { description: error.message });
+    let updateError;
+
+    if (scope !== "single" && groupTx) {
+      // Strip per-row fields — each installment/recurrence has its own date and number
+      const { date: _d, installment_number: _n, invoice_id: _inv, ...groupPayload } = updatePayload as typeof updatePayload & { date?: string; installment_number?: number | null; invoice_id?: string | null };
+
+      if (scope === "all") {
+        const field = groupTx.is_installment ? "installment_group_id" : "recurrence_group_id";
+        const gid = groupTx.is_installment ? groupTx.installment_group_id : groupTx.recurrence_group_id;
+        ({ error: updateError } = await supabase.from("transactions").update(groupPayload).eq(field, gid!));
+      } else {
+        // "following"
+        if (groupTx.is_installment && groupTx.installment_group_id && groupTx.installment_number !== null) {
+          ({ error: updateError } = await supabase.from("transactions").update(groupPayload)
+            .eq("installment_group_id", groupTx.installment_group_id)
+            .gte("installment_number", groupTx.installment_number!));
+        } else if (groupTx.is_recurring && groupTx.recurrence_group_id && groupTx.date) {
+          ({ error: updateError } = await supabase.from("transactions").update(groupPayload)
+            .eq("recurrence_group_id", groupTx.recurrence_group_id)
+            .gte("date", groupTx.date));
+        }
+      }
+    } else {
+      ({ error: updateError } = await supabase.from("transactions").update(updatePayload).eq("id", id));
+    }
+
+    if (updateError) {
+      toast.error("Erro ao atualizar transação", { description: updateError.message });
       return false;
     }
 
@@ -245,29 +310,45 @@ export function useTransactions() {
     return true;
   };
 
-  const deleteTransaction = async (id: string, deleteAll = false, groupField?: string, groupId?: string) => {
+  const deleteTransaction = async (
+    id: string,
+    scope: "single" | "following" | "all" = "single",
+    groupTx?: Pick<Transaction, "is_installment" | "is_recurring" | "installment_group_id" | "recurrence_group_id" | "installment_number" | "date">
+  ) => {
     const supabase = createClient();
+    let error;
 
-    if (deleteAll && groupField && groupId) {
-      const { error } = await supabase.from("transactions").delete().eq(groupField, groupId);
-      if (error) {
-        toast.error("Erro ao excluir transações", { description: error.message });
-        return false;
+    if (scope === "all" && groupTx) {
+      const field = groupTx.is_installment ? "installment_group_id" : "recurrence_group_id";
+      const gid = groupTx.is_installment ? groupTx.installment_group_id : groupTx.recurrence_group_id;
+      ({ error } = await supabase.from("transactions").delete().eq(field, gid!));
+      if (!error) toast.success("Todas as ocorrências excluídas!");
+    } else if (scope === "following" && groupTx) {
+      if (groupTx.is_installment && groupTx.installment_group_id && groupTx.installment_number !== null) {
+        ({ error } = await supabase.from("transactions").delete()
+          .eq("installment_group_id", groupTx.installment_group_id)
+          .gte("installment_number", groupTx.installment_number!));
+      } else if (groupTx.is_recurring && groupTx.recurrence_group_id && groupTx.date) {
+        ({ error } = await supabase.from("transactions").delete()
+          .eq("recurrence_group_id", groupTx.recurrence_group_id)
+          .gte("date", groupTx.date));
+      } else {
+        // Fallback: dados de grupo insuficientes — deleta apenas esta
+        ({ error } = await supabase.from("transactions").delete().eq("id", id));
       }
-      toast.success("Todas as ocorrências excluídas!");
+      if (!error) toast.success("Esta e as seguintes excluídas!");
     } else {
-      const { error } = await supabase.from("transactions").delete().eq("id", id);
-      if (error) {
-        toast.error("Erro ao excluir transação", { description: error.message });
-        return false;
-      }
-      toast.success("Transação excluída!");
+      ({ error } = await supabase.from("transactions").delete().eq("id", id));
+      if (!error) toast.success("Transação excluída!");
     }
-    
-    // Atualizar saldos globais
+
+    if (error) {
+      toast.error("Erro ao excluir transação", { description: error.message });
+      return false;
+    }
+
     globalMutate("accounts");
     globalMutate("credit_cards");
-    
     return true;
   };
 
