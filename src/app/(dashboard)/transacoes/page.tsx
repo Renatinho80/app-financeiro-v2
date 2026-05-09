@@ -18,8 +18,17 @@ import { formatCurrency, formatDate, getTransactionTypeLabel, getTransactionStat
 import { Plus, Search, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pencil, Trash2, Copy, Download, Filter, X } from "lucide-react";
 import type { Transaction, TransactionFilters } from "@/types";
 
-const today = new Date().toISOString().split("T")[0];
-const defaultFilters: TransactionFilters = { endDate: today };
+const now = new Date();
+const thirtyDaysAgo = new Date();
+thirtyDaysAgo.setDate(now.getDate() - 30);
+
+const todayStr = now.toISOString().split("T")[0];
+const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
+
+const defaultFilters: TransactionFilters = { 
+  startDate: thirtyDaysAgoStr,
+  endDate: todayStr 
+};
 
 const typeColors: Record<string, string> = {
   income: "text-emerald-500",
@@ -142,26 +151,40 @@ export default function TransacoesPage() {
               />
             </div>
             <Select
-              value={draftFilters.type ?? null}
-              onValueChange={v => setDraftFilters(prev => ({ ...prev, type: v ?? undefined }))}
-              items={{ income: "Receita", expense: "Despesa", transfer: "Transferência" }}
+              value={draftFilters.type ?? "all"}
+              onValueChange={v => setDraftFilters(prev => ({ ...prev, type: v && v !== "all" ? v as any : undefined }))}
             >
               <SelectTrigger className="w-40"><SelectValue placeholder="Todos os tipos" /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">Todos os tipos</SelectItem>
                 <SelectItem value="income">Receita</SelectItem>
                 <SelectItem value="expense">Despesa</SelectItem>
                 <SelectItem value="transfer">Transferência</SelectItem>
               </SelectContent>
             </Select>
             <Select
-              value={draftFilters.status ?? null}
-              onValueChange={v => setDraftFilters(prev => ({ ...prev, status: v ?? undefined }))}
-              items={{ confirmed: "Confirmado", pending: "Pendente" }}
+              value={draftFilters.status ?? "all"}
+              onValueChange={v => setDraftFilters(prev => ({ ...prev, status: v && v !== "all" ? v as any : undefined }))}
             >
               <SelectTrigger className="w-40"><SelectValue placeholder="Todos os status" /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">Todos os status</SelectItem>
                 <SelectItem value="confirmed">Confirmado</SelectItem>
                 <SelectItem value="pending">Pendente</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={draftFilters.category_id ?? "all"}
+              onValueChange={v => setDraftFilters(prev => ({ ...prev, category_id: v && v !== "all" ? v : undefined }))}
+            >
+              <SelectTrigger className="w-48"><SelectValue placeholder="Todas as categorias" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as categorias</SelectItem>
+                {allFlat.map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    <span>{cat.icon}</span> {cat.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Input

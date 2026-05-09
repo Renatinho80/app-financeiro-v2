@@ -174,7 +174,7 @@ export default function DashboardPage() {
       (catExp || []).forEach((t: { amount: number; category_id?: string; category: unknown }) => {
         const cat = Array.isArray(t.category) ? t.category[0] : (t.category as { name: string; color: string | null } | null);
         const name = cat?.name || "Sem categoria";
-        const color = (cat as { color?: string | null })?.color || "#64748b";
+        const color = (cat as { color?: string | null })?.color || (name === "Sem categoria" ? "#64748b" : "");
         const existing = catMap.get(name);
         if (existing) existing.value += Number(t.amount);
         else catMap.set(name, { name, value: Number(t.amount), color });
@@ -681,7 +681,7 @@ export default function DashboardPage() {
                 {categoryExpenses.slice(0, 8).map((cat, i) => (
                   <div key={i} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color }} />
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cat.color || CHART_COLORS[i % CHART_COLORS.length] }} />
                       <span className="truncate">{cat.name}</span>
                     </div>
                     <span className="font-medium shrink-0">{formatCurrency(cat.value)}</span>
